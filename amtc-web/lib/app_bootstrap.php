@@ -28,18 +28,22 @@ if (defined("AMTC_PDOSTRING")) {
   ORM::configure(AMTC_PDOSTRING);
   ORM::configure('username', AMTC_DBUSER);
   ORM::configure('password', AMTC_DBPASS);
+  // small hack to enforce constraint checking for sqlite; requires 3.6+
+  if (substr(AMTC_PDOSTRING,0,6)=='sqlite') {
+    ORM::raw_execute('PRAGMA foreign_keys = ON');
+  }
 }
 
 // Initialize http://www.slimframework.com/
 \Slim\Slim::registerAutoloader();
 $app = new \Slim\Slim();
-$app->config('debug', false); // ... and enables custom $app->error() handler
+$app->config('debug', false); // false enables custom error handler below
 $app->response()->header('Content-Type', 'application/json;charset=utf-8');
 $app->notFound(function () {
   echo json_encode(Array('error'=>'Not found'));
 });
 $app->error(function (\Exception $e) {
-  echo json_encode( array('exceptionMessage'=> substr($e->getMessage(),0,128).'...') );
+  echo strlen($e->getMessage()) >  128 ? substr($e->getMessage(),0,128).'...' : $e->getMessage();
 });
 
 class SlimUtil {

@@ -1,0 +1,70 @@
+{{! amtc-web ... live view / monitor + control mode }}
+<div class="row">
+  <div class="col-lg-12" id="hosts">
+    {{#if controllers.laststates.laststates}}
+      {{!-- triggers loading laststates - but host display should not depend on it --}}
+    {{/if}}
+    {{#if controllers.hosts.hosts}}
+      {{#each model.hosts as |host|}}
+        <div class="pc {{host.laststate.amtStateCssClass}} {{host.laststate.openPortCssClass}}" hostDbId={{host.id}}>
+          <div>
+            <span class="porticon">
+              {{#if host.laststate}}
+                {{host.laststate.openPortIcon}}
+              {{else}}
+                <i class="fa fa-fw fa-question"></i>
+              {{/if}}
+            </span>
+            <span class="hostname">{{host.hostname}}</span>
+          </div>
+          <div class="message">
+            {{#if host.laststate}}
+              {{host.laststate.lastScan}}
+            {{else}}
+              No logged data yet
+            {{/if}}
+          </div>
+        </div>
+      {{/each}}
+    {{/if}}
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-lg-12">
+    {{#if model.hosts.length}}
+    <div id="livectrl">
+      <h5>Select hosts above like files in Finder/Explorer or by state below</h5>
+      <p id="hselect">
+        <div id="S_ssh"  {{action "selectByState" "ssh"}}  class="S0 ssh pc"><i class="fa fa-fw fa-linux"></i> SSH</div>
+        <div id="S_rdp"  {{action "selectByState" "rdp"}}  class="S0 rdp pc"><i class="fa fa-fw fa-windows"></i> RDP</div>
+        <div id="S_none" {{action "selectByState" "none"}} class="S0 none pc"><i class="fa fa-fw fa-ban red"></i> No OS</div>
+        <div id="S_S3"   {{action "selectByState" "S3"}}   class="S3 pc"><i class="fa fa-fw fa-bed"></i> sleep</div>
+        <div id="S_S4"   {{action "selectByState" "S4"}}   class="S4 pc"><i class="fa fa-fw fa-rocket"></i> hibernate</div>
+        <div id="S_S5"   {{action "selectByState" "S5"}}   class="S5 pc"><i class="fa fa-fw fa-power-off"></i> soft-off</div>
+        <div id="S_S16"  {{action "selectByState" "S16"}}  class="S16 pc"><i class="fa fa-fw fa-ban"></i> no reply</div>
+        <div id="S_S0"   {{action "selectByState" "S0"}}   class="S0 pc" style="background:#888">powered up</div>
+        <div id="S_pc"   {{action "selectByState" "pc"}}   class="pc">any</div>
+      </p>
+      {{#if selectedHostsCount}}
+        <div id="ctrl">
+          <h5>Action for selected <span id="numselected">{{selectedHostsCount}}</span>&nbsp;hosts</h5>
+          <form>
+            {{#each commandActions as |cmd|}}
+              <label>{{radio-button name='cmd' value=cmd groupValue=selectedCmd}} {{cmd}}</label>
+            {{/each}}
+            ... using a inter-command-delay of {{input type="text" size=3 value=selectedDelay}} seconds
+            {{#if selectedCmd}}
+              <button class="btn btn-default" {{action 'submitJob'}}> <i class="fa fa-thumbs-up"></i> Do it</button>
+            {{/if}}
+          </form>
+        </div>
+      {{/if}}
+    </div>
+    {{else}}
+    This room looks empty.
+    Use {{#link-to "ou.hosts"}}Edit Hosts{{/link-to}} to add some hosts to this room.
+    {{/if}}
+    <!-- FIXME: {{controller.model}} is [object] instead of Ember.Ou if redir/login -->
+  </div>
+</div>

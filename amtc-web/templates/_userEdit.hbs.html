@@ -1,0 +1,41 @@
+<form id="userEditForm">
+ <fieldset>
+    <div class="form-group">
+      <label for="name">Username</label>
+      {{input class="form-control" type="text" value=model.name insert-newline="doneEditingReturn" placeholder="username"}}
+    </div>
+    <div class="form-group">
+      <label for="name">Full name</label>
+      {{input class="form-control" type="text" value=model.fullname insert-newline="doneEditingReturn" placeholder="John Doe"}}
+    </div>
+    <div class="form-group">
+      <label for="optionset">Root OU</label>
+      {{#if controllers.ous.ous.content}}
+        {{my-select
+          content=controllers.ous.ous.content
+          selection=model.ou_id
+          action=(action (mut model.ou_id))
+          prompt="Choose Organizational Unit / Room"
+          optionValuePath="id"
+          optionLabelPath="name"
+        }}
+      {{/if}}
+      <p class="help-block">Toplevel OU user may access (only one supported atm)</p>
+    </div>
+    <div class="checkbox">
+      <label>
+        {{input type="checkbox" checked=model.is_admin}} User has admin privileges
+      </label>
+    </div>
+    <div class="checkbox">
+      <label>
+        {{input type="checkbox" checked=model.is_enabled}} Enable account
+      </label>
+    </div>
+    <div class="checkbox">
+      <label>
+        {{input type="checkbox" checked=model.can_control}} Has permission to power-control (view only otherwise)
+      </label>
+    </div>
+ </fieldset>
+</form>

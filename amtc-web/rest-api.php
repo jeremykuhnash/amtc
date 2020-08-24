@@ -15,7 +15,7 @@ session_name("amtcweb");
 session_start();
 
 // Block access if unauthenticated - only permit some vital routes
-$allowUnauthenticated = Array('authenticate', 'rest-config.js', 'pages',
+$allowUnauthenticated = Array('authenticate', 'rest-config.js',
                               'phptests', 'submit-configuration');
 $_route = explode('/', $app->request()->getPathInfo());
 $route  = $_route[1];
@@ -28,12 +28,151 @@ if (!empty($_SESSION['authenticated']) && $_SESSION['authenticated'] === true ||
   return;
 }
 
-
-/*****************************************************************************/
 /**************** Only SLIM request handling below ***************************/
-/*****************************************************************************/
 
+//
+// DB-Model requests
+//
+
+// GET all records for given model
+$app->get('/:model', function($model) {
+  $result = array($model=>array());
+  $query = Model::factory(substr(ucfirst($model),0,-1));
+  switch ($model) {
+    case 'notifications':
+      $query->limit(15)->order_by_desc('tstamp');
+    break;
+    case 'hosts':
+      $query->order_by_asc('hostname');
+    break;
+    case 'jobs':
+      $query->order_by_asc('description');
+    break;
+    // same order by name for these...
+    case 'users':
+    case 'optionsets':
+      $query->order_by_asc('name');
+    break;
+  }
+  foreach ($query->find_many() as $record) {
+    $result[$model][] = $record->as_array();
+  }
+  echo json_encode( $result );
+})->conditions(array('model' => '(users|hosts|optionsets|jobs|notifications|laststates|logdays)'));
+
+// GET single record by id
+$app->get('/:model/:id', function($model,$id) {
+  $singular = substr($model,0,-1);
+  $query = Model::factory(ucfirst($singular));
+  if ($result = $query->find_one($id)) {
+    echo json_encode( array($singular=> $result->as_array()) );
+  }
+})->conditions(array('model' => '(users|hosts|optionsets|jobs|notifications|ous)'));
+
+// DELETE single record
+$app->delete('/:model/:id', function($model,$id) {
+  $query = Model::factory(ucfirst(substr($model,0,-1)));
+  if ($result = $query->find_one($id)) {
+    $result->delete();
+    // "Note: Although after destroyRecord or deleteRecord/save the adapter
+    // expects an empty object e.g. {} to be returned from the server after
+    //  destroying a record."
+    // http://emberjs.com/guides/models/the-rest-adapter/
+    echo '{}';
+  }
+})->conditions(array('model' => '(ous|users|optionsets|jobs|hosts)'));
+
+// PUT / update single record
+$app->put('/:model/:id', function($model,$id) use ($app) {
+  $singular = substr($model,0,-1);
+  $query = Model::factory(ucfirst($singular));
+  if (($dev = $query->find_one($id)) && ($data = SlimUtil::getSubmit($app,$singular))) {
+    if (isset($data['ou_path'])) {
+      unset($data['ou_path']); // computed/displayed property ... avoid sending
+    }
+    $dev->set($data);
+    $dev->save();
+    echo json_encode( array($singular => $dev->as_array()) );
+  }
+})->conditions(array('model' => '(ous|users|optionsets|jobs)'));
+
+// POST / create single record
+$app->post('/:model', function($model) use ($app) {
+  $singular = substr($model,0,-1);
+  $query = Model::factory(ucfirst($singular));
+  if (($dev = $query->create()) && ($data = SlimUtil::getSubmit($app,$singular))) {
+    switch ($model) {
+      case 'ous':
+        unset($data['ou_path']);
+        $dev->set($data);
+      break;
+      case 'hosts':
+        $dev->ou_id = $data['ou_id'];
+        $dev->hostname = $data['hostname'];
+      break;
+      case 'jobs':
+        if (isset($data['hosts'])) {
+          $hosts = $data['hosts'];
+          unset($data['hosts']); // rcvd: array "hosts", need: string "amtc_hosts"
+        }
+        $dev->set($data);
+        $dev->user_id     = 1; // TBD: Put correct userid here!
+        if (is_array($hosts)) {
+          $dev->amtc_hosts = preg_replace('/[^\d,]/','',implode(',',$hosts));
+        }
+      break;
+      default:
+        $dev->set($data);
+    }
+    $dev->save();
+    echo json_encode( array($singular => $dev->as_array()) );
+  }
+})->conditions(array('model' => '(ous|hosts|users|optionsets|jobs)'));
+
+// special case OUs: include child OUs in reply
+$app->get('/ous', function () {
+  $result = array('ous'=>array());
+  foreach (OU::find_many() as $record) {
+    $r = $record->as_array();
+    $children = OU::where('parent_id', $r['id'])->find_many() ;
+    $kids = array();
+    foreach ($children as $childOu) {
+      $kids[] = $childOu->id;
+    }
+    $r['children'] = $kids;
+    $result['ous'][] = $r;
+  }
+  echo json_encode( $result );
+});
+
+// single-day statelogs for hosts of a single OU
+$app->get('/statelogs/:ou/:startUnixTime', function ($ouid,$ctime) {
+  $result = Array();
+  $ou = OU::find_one($ouid);
+  foreach ($ou->hosts()->order_by_asc('hostname')->find_many() as $host) {
+    $hosts[] = $host->id;
+  }
+  // find 'previous-day[s]-state' for each host
+  foreach ($hosts as $hostid) {
+    $record = Statelog::where('host_id',$hostid)->
+                        where_lt('state_begin',$ctime)->
+                        order_by_desc('state_begin')->
+                        limit(1)->find_one();
+    if ($record)
+      $result[] = $record->as_array();
+  }
+  foreach (Statelog::where_gt('state_begin',$ctime)
+            ->where_lt('state_begin',$ctime+86400)
+            ->where_in('host_id',$hosts)
+            ->find_many() as $record) {
+    $result[] = $record->as_array();
+  }
+  echo json_encode( $result );
+});
+
+//
 //  Non-DB-Model requests
+//
 
 // provide URI for ember-data REST adapter, based on this php script's location
 $app->get('/rest-config.js', function () use ($app) {
@@ -46,18 +185,6 @@ $app->get('/rest-config.js', function () use ($app) {
             file_exists(AMTC_CFGFILE) ? 'true' : 'false');
   // what about rootURL ? http://emberjs.com/guides/routing/
   // this response could be done statically if #/setup would write it to config/cfg.js?
-});
-// Return static markdown help pages, json encoded
-$app->get('/pages/:id', function ($id) use ($app) {
-  $file = sprintf("pages/%s.md", $id);
-  is_readable($file) || $app->notFound();
-  $contents = file_get_contents($file);
-  echo json_encode( array('page'=>array(
-    'id' => $id,
-    'page_name' => 'unused',
-    'page_title' => 'unused',
-    'page_content' => $contents
-  )));
 });
 // Installer
 $app->post('/submit-configuration', function () {
@@ -90,8 +217,14 @@ $app->post('/authenticate', function () {
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
     if ($status === 200) {
-        $x = array("result"=>"success");
+      if ($user = User::where('name',$wanted['username'])->find_one()) {
+        $x = array("result"=>"success", "fullname"=>$user->fullname);
         $_SESSION['authenticated'] = true;
+        $_SESSION['username'] = $user->name;
+        $_SESSION['userid']   = $user->id;
+      } else {
+        $x = array("exceptionMessage"=>"no-local-account");
+      }
     } else
       sleep(2);
   }
@@ -106,215 +239,51 @@ $app->get('/logout', function () {
   session_destroy();
   echo json_encode($x);
 });
-
-// DB-Model requests
-
-/**************** Notifications / Short user messages for dashboard **********/
-
-$app->get('/notifications', function () {
-  $result = array('notifications'=>array());
-  foreach (Notification::limit(15)->order_by_desc('tstamp')->find_many() as $record) { $result['notifications'][] = $record->as_array(); }
-  echo json_encode( $result );
-});
-
-/**************** OUs / Rooms ************************************************/
-
-$app->get('/ous', function () {
-  $result = array('ous'=>array());
-  foreach (OU::find_many() as $record) {
-    $r = $record->as_array();
-    $children = OU::where('parent_id', $r['id'])->find_many() ;
-    $kids = array();
-    foreach ($children as $childOu) {
-      $kids[] = $childOu->id;
-    }
-    $r['children'] = $kids;
-    $r['ou_path'] = 'fixme'; // record->getPathString -- should/could be done clientside, too
-    $result['ous'][] = $r;
+// #/systemhealth status page
+$app->get('/systemhealth', function () {
+  $data['phpversion'] = PHP_VERSION;
+  $data['uptime'] = trim(`uptime`);
+  $data['datetime'] = strftime('%c');
+  $data['diskfree'] = sprintf('%0.3f GB', disk_free_space(AMTC_DATADIR)/1024/1024/1024);
+  $monitorJob = Job::find_one(1);
+  $data['lastmonitoringstarted'] = $monitorJob->last_started;
+  $data['lastmonitoringdone'] = $monitorJob->last_done;
+  $data['activejobs'] = ORM::for_table('job')->where('job_status',Job::STATUS_RUNNING)->count();
+  $data['activeprocesses'] = rand(1,32000); // tbd ...
+  $data['monitorcount'] = ORM::for_table('statelog')->count();
+  // add -V to amtc... or improve otherwise
+  $av = shell_exec(AMTC_BIN);
+  $av = preg_replace("/.*amtc v([^\s]+).*/ms","$1",$av);
+  $data['amtcversion'] = $av;
+  //
+  $logfile = AMTC_DATADIR.'/amtc-web-cli.log';
+  $data['logsize'] = 'file does not exist';
+  $data['logmodtime'] = false;
+  if (file_exists($logfile)) {
+    $fstat = stat($logfile);
+    $data['logsize'] = sprintf('%0.3f MB', $fstat[7]/1024/1024);
+    $data['logmodtime'] = $fstat[9];
   }
-  echo json_encode( $result );
+
+  $result = array('systemhealth'=>$data);
+  echo json_encode($result);
 });
-$app->get('/ous/:id', function ($ouid) {
-  if ($ou = OU::find_one($ouid)) {
-    echo json_encode( array('ou'=> $ou->as_array()) );
-  }
-});
-$app->put('/ous/:id', function ($id) use ($app) {
-  if (($dev = OU::find_one($id)) && ($data = SlimUtil::getSubmit($app,'ou'))) {
-    unset($data['ou_path']); // computed/displayed property ... avoid sending
-    $dev->set($data);
-    $dev->save();
-    echo json_encode( array('ou'=> $dev->as_array()) );
+// #/systemhealth actions
+$app->get('/flushStatelog', function () {
+  // tbd admin only...
+  if (ORM::for_table('statelog')->delete_many()) {
+    echo json_encode(Array('success'=>'success'));
   }
 });
-$app->post('/ous', function () {
-  if (($dev = OU::create()) && ($data = SlimUtil::getSubmit($app,'ou'))) {
-    unset($data['ou_path']); // computed/displayed property ... avoid sending
-    $dev->set($data);
-    $dev->save();
-    echo json_encode( array('ou'=> $dev->as_array()) );
-  }
-});
-$app->delete('/ous/:id', function ($id) {
-  if ($dev = OU::find_one($id)) {
-    OU::query('PRAGMA foreign_keys = ON;');
-    $dev->delete();
-    // "Note: Although after destroyRecord or deleteRecord/save the adapter
-    // expects an empty object e.g. {} to be returned from the server after
-    //  destroying a record."
-    // http://emberjs.com/guides/models/the-rest-adapter/
-    echo '{}';
+$app->get('/resetMonitoringJob', function () {
+  // tbd admin only and id 1 :/
+  if ($monitoringJob = ORM::for_table('job')->find_one(1)) {
+    $monitoringJob->job_status = Job::STATUS_PENDING;
+    $monitoringJob->save();
+    echo json_encode(Array('success'=>'success'));
   }
 });
 
-/**************** Hosts ******************************************************/
-
-$app->get('/hosts', function () {
-  $result = array('hosts'=>array());
-  foreach (Host::order_by_asc('hostname')->find_many() as $record) {
-    $r = $record->as_array();
-    $result['hosts'][] = $r;
-  }
-  echo json_encode( $result );
-});
-$app->post('/hosts', function () use ($app) {
-  if (($dev = Host::create()) && ($data = SlimUtil::getSubmit($app,'host'))) {
-    $dev->ou_id = $data['ou_id'];
-    $dev->hostname = $data['hostname'];
-    $dev->save();
-    echo json_encode( array('host'=> $dev->as_array()) );
-  }
-});
-// should better be side-loaded with hosts...?
-$app->get('/laststates', function () {
-  $result = array('laststates'=>array());
-  foreach (Laststate::find_many() as $record) {
-    $result['laststates'][] = $record->as_array();
-  }
-  echo json_encode( $result );
-});
-
-/**************** Users ******************************************************/
-
-$app->get('/users', function () {
-  $result = array('users'=>array());
-  foreach (User::order_by_asc('name')->find_many() as $record) {
-    $r = $record->as_array();
-    $result['users'][] = $r;
-  }
-  echo json_encode( $result );
-});
-$app->get('/users/:id', function ($uid) {
-  if ($user = User::find_one($uid)) {
-    echo json_encode( array('user'=> $user->as_array()) );
-  } elseif ($user = User::where('name',$uid)->find_one()) {
-    echo json_encode( array('user'=> $user->as_array()) );
-  }
-});
-$app->put('/users/:id', function ($id) use ($app) {
-  if (($dev = User::find_one($id)) && ($data = SlimUtil::getSubmit($app,'user'))) {
-    $dev->set($data);
-    $dev->save();
-    echo json_encode( array('user'=> $dev->as_array()) );
-  }
-});
-$app->post('/users', function () use ($app) {
-  if (($dev = User::create()) && ($data = SlimUtil::getSubmit($app,'user'))) {
-    $dev->set($data);
-    $dev->save();
-    echo json_encode( array('user'=> $dev->as_array()) );
-  }
-});
-$app->delete('/users/:id', function ($id) {
-  if ($dev = User::find_one($id)) {
-    Optionset::query('PRAGMA foreign_keys = ON;');
-    $dev->delete();
-    echo '{}';
-  }
-});
-
-/**************** AMT Optionsets *********************************************/
-
-$app->get('/optionsets', function () {
-  $result = array('optionsets'=>array());
-  foreach (Optionset::order_by_asc('name')->find_many() as $record) {
-    $r = $record->as_array();
-    $result['optionsets'][] = $r;
-  }
-  echo json_encode( $result );
-});
-$app->get('/optionsets/:id', function ($ouid) {
-  if ($os = Optionset::find_one($ouid)) {
-    echo json_encode( array('optionset'=> $os->as_array()) );
-  }
-});
-$app->put('/optionsets/:id', function ($id) use ($app) {
-  if (($dev = Optionset::find_one($id)) && ($data = SlimUtil::getSubmit($app,'optionset'))) {
-    $dev->set($data);
-    $dev->save();
-    echo json_encode( array('optionset'=> $dev->as_array()) );
-  }
-});
-$app->delete('/optionsets/:id', function ($id) {
-  if ($dev = Optionset::find_one($id)) {
-    Optionset::query('PRAGMA foreign_keys = ON;');
-    $dev->delete();
-    echo '{}';
-  }
-});
-$app->post('/optionsets', function () use ($app) {
-  if (($dev = Optionset::create()) && ($data = SlimUtil::getSubmit($app,'optionset'))) {
-    $dev->set($data);
-    $dev->save();
-    echo json_encode( array('optionset'=> $dev->as_array()) );
-  }
-});
-
-/**************** Scheduler items *********************************************/
-
-$app->get('/jobs', function () {
-  $result = array('jobs'=>array());
-  foreach (Job::order_by_asc('description')->find_many() as $record) {
-    $r = $record->as_array();
-    $result['jobs'][] = $r;
-  }
-  echo json_encode( $result );
-});
-$app->get('/jobs/:id', function ($jid) {
-  if ($job = Job::find_one($jid)) {
-    echo json_encode( array('job'=> $job->as_array()) );
-  }
-});
-$app->put('/jobs/:id', function ($id) use ($app) {
-  if (($job = Job::find_one($id)) && ($data = SlimUtil::getSubmit($app,'job'))) {
-    $job->set($data);
-    $job->save();
-    echo json_encode( array('job'=> $job->as_array()) );
-  }
-});
-$app->delete('/jobs/:id', function ($id) {
-  if ($job = Job::find_one($id)) {
-    //Job::query('PRAGMA foreign_keys = ON;'); // YIKES! FIXME!-no-idiorm...ORM::configure?
-    $job->delete();
-    echo '{}';
-  }
-});
-$app->post('/jobs', function () use ($app) {
-  if (($job = Job::create()) && ($user = SlimUtil::getSubmit($app,'job'))) {
-    if (isset($user['hosts'])) {
-      $hosts = $user['hosts'];
-      unset($user['hosts']); // rcvd: array "hosts", need: string "amtc_hosts"
-    }
-    $job->set($user);
-    $job->user_id     = 1; // FIXME!!
-    if (is_array($hosts))
-      $job->amtc_hosts = preg_replace('/[^\d,]/','',implode(',',$hosts));
-    $job->save();
-    echo json_encode( array('job'=> $job->as_array()) );
-    // if this is a interactive/type-1 job with cmd != info,
-    // add scan jobs to monitor job progress w/o manual page reloads
-  }
-});
 
 /*****************************************************************************/
 /*

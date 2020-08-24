@@ -27,14 +27,15 @@ SHELL = bash
 RPMBUILD  ?= $(HOME)/rpmbuild
 RPMSRC    ?= "$(RPMBUILD)/SOURCES/amtc-$(AMTCV).tar.gz"
 DESTDIR   ?= /
-BINDIR    ?= usr/bin
-WWWDIR    ?= usr/share/amtc-web
+BINDIR    ?= $(shell test `uname -s` = "Darwin" && echo usr/local/bin || echo usr/bin)
+WWWDIR    ?= $(shell test `uname -s` = "Darwin" && echo usr/local/share/amtc-web || echo usr/share/amtc-web)
 ETCDIR    ?= etc
 DATADIR   ?= var/lib
+MANDIR    ?= usr/share/man
 AMTCWEBDIR = amtc-web
 
 # for farmbuild target - build hosts
-HOSTS_deb  = debian7 ubuntu14 raspbian7
+HOSTS_deb  = debian8 ubuntu14 raspbian7
 HOSTS_rpm  = fedora20 centos7
 
 # note: debian derivates (ubuntu, raspbian...) have /etc/d_v, too.
@@ -70,11 +71,12 @@ install: dist
 	cp $(AMTCWEBDIR)/_httpd_conf_example $(DESTDIR)/etc/amtc-web/amtc-web_httpd.conf
 	ln -s ../../amtc-web/amtc-web_httpd.conf $(DESTDIR)/etc/apache2/$(APACHECONFD)
 
-dist: amtc amtc-web
+dist: amtc amtc-web amtc-manpage
 	echo "Preparing clean distribution in dist/"
 	rm -rf dist
-	mkdir -p dist/$(BINDIR) dist/$(WWWDIR) dist/$(ETCDIR)/cron.d dist/$(DATADIR)
+	mkdir -p dist/$(BINDIR) dist/$(WWWDIR) dist/$(ETCDIR)/cron.d dist/$(DATADIR) dist/$(MANDIR)/man1
 	cp src/amtc dist/$(BINDIR)
+	cp src/man/man1/amtc.1 dist/$(MANDIR)/man1
 	cp -R $(AMTCWEBDIR)/* dist/$(WWWDIR)
 	cd dist/$(WWWDIR) && make distclean && mv _htaccess_example .htaccess && \
 	   rm -f basic-auth/_htaccess.default config/_htpasswd.default data/amtc-web.db \
@@ -85,6 +87,8 @@ dist: amtc amtc-web
 	cd dist/$(WWWDIR) && ln -s /$(ETCDIR)/amtc-web config && ln -s /$(DATADIR)/amtc-web data
 	cd dist/$(WWWDIR) && perl -pi -e "s@AuthUserFile .*@AuthUserFile /$(ETCDIR)/amtc-web/.htpasswd@" basic-auth/.htaccess
 
+amtc-manpage:
+	cd src && make man/man1/amtc.1
 
 # build package, depending on current os
 package:
@@ -96,7 +100,7 @@ deb: clean
 	echo  -e "#!/bin/sh -e\nchown www-data:www-data /var/lib/amtc-web /etc/amtc-web\nchmod 770 /var/lib/amtc-web /etc/amtc-web\na2enmod headers\na2enmod rewrite\nservice apache2 restart" > debian/postinst
 	perl -pi -e 's@Description: .*@Description: Intel AMT/DASH remote power management tool@' debian/control
 	perl -pi -e 's@^Depends: (.*)@Depends: $$1, apache2|lighttpd|nginx, php5-curl, php5-sqlite|php5-mysql|php5-pgsql@' debian/control
-	perl -pi -e 's@^Build-Depends: (.*)@Build-Depends: $$1, curl, vim-common, libcurl3, libcurl4-gnutls-dev, libgnutls-dev@' debian/control
+	perl -pi -e 's@^Build-Depends: (.*)@Build-Depends: $$1, curl, vim-common, libcurl3, libcurl4-gnutls-dev@' debian/control
 	debuild -i -us -uc -b
 
 # remove debian/ subdirectory and trash package(s) built
@@ -126,6 +130,9 @@ osxpkg: clean
 	cp osxpkgresources/ch.hacker.amtc-web.plist osxpkgroot/Library/LaunchDaemons
 	chmod +x osxpkgscripts/postinstall
 	mv osxpkgroot/etc/apache2/conf.d osxpkgroot/etc/apache2/other
+	perl -pi -e 's@usr/share@usr/local/share@' osxpkgroot/etc/apache2/other/amtc-web_httpd.conf
+	perl -pi -e 'BEGIN{undef $$/;} s@Order allow,deny\n\s+Allow from all@Require all granted@sm' osxpkgroot/etc/apache2/other/amtc-web_httpd.conf
+	perl -pi -e 'BEGIN{undef $$/;} s@Order allow,deny\n\s+Deny from all@Require all denied@smg' osxpkgroot/etc/apache2/other/amtc-web_httpd.conf
 	pkgbuild --root osxpkgroot --scripts osxpkgscripts \
 		 --identifier ch.hacker.amtc --version $(AMTCV) amtc.pkg
 	productbuild --synthesize --package amtc.pkg Distribution.xml
@@ -149,15 +156,9 @@ install-package: package
 
 # uninstall any installed package and remove ANY file/directory created by amtc-web
 purge:
-ifeq ($(PKGTYPE),osxpkg)
-	-sudo pkgutil --forget ch.hacker.amtc
-	-sudo launchctl disable system/ch.hacker.amtc-web
-	-sudo launchctl remove ch.hacker.amtc-web
-else ifeq ($(PKGTYPE),deb)
-	-sudo apt-get purge -y amtc
-else ifeq ($(PKGTYPE),rpm)
-	-sudo yum remove -y amtc amtc-web amtc-debuginfo
-endif
+	test "$(PKGTYPE)" = "osxpkg" && (sudo pkgutil --forget ch.hacker.amtc; sudo launchctl disable system/ch.hacker.amtc-web; sudo launchctl remove ch.hacker.amtc-web ) || true
+	test "$(PKGTYPE)" = "deb"    && sudo apt-get purge -y amtc || true
+	test "$(PKGTYPE)" = "rpm"    && sudo yum remove -y amtc amtc-web amtc-debuginfo || true
 	sudo rm -rf /etc/amtc-web /var/lib/amtc-web /usr/share/amtc-web /etc/{httpd,apache2}/{other,conf.d}/amtc-web_httpd.conf /Library/LaunchDaemons/ch.hacker.amtc-web.plist
 
 

@@ -207,6 +207,12 @@ class AmtcwebSpooler {
   }
 
   static function execMonitoringJob(Job $job,$opt) {
+    // fetch last state of all hosts
+    $laststates = Array();
+    foreach( Laststate::find_many() as $host ) {
+      $laststates[$host->hostname] = $host->as_array();
+    }
+    //
     $optsetgroup = Array();
     $job->last_started = time();
     $job->job_status = Job::STATUS_RUNNING;
@@ -223,8 +229,8 @@ class AmtcwebSpooler {
       $maxThreads = 180; // This should be a global config option!
       if (count($hosts) < $maxThreads) {
         $job->amtc_hosts = implode(',', $hosts);
-        $job->ou_id = $ou_id; // one OU setting fits all here, as it's the same...
-        self::updateHostState( self::execAmtCommand($job,$opt), $opt );
+        $job->ou_id = $ou_array[0]; // one OU setting fits all here, as it's the same...
+        self::updateHostState( self::execAmtCommand($job,$opt), $opt, $laststates );
       } else {
         // more than maxThreads hosts to scan, slice hosts array
         $hostsCompleted = 0;
@@ -232,7 +238,8 @@ class AmtcwebSpooler {
           $workpack = array_slice($hosts, $hostsCompleted, $maxThreads);
           $hostsCompleted += count($workpack);
           $job->amtc_hosts = implode(',', $workpack);
-          self::updateHostState( self::execAmtCommand($job,$opt), $opt );
+          $job->ou_id = $ou_array[0]; // one OU setting fits all here, as it's the same...
+          self::updateHostState( self::execAmtCommand($job,$opt), $opt, $laststates );
         }
       }
     }
@@ -302,14 +309,9 @@ class AmtcwebSpooler {
     return json_decode($res);
   }
 
-  static function updateHostState($data /* = amtc json_decoded output */,$opt) {
+  static function updateHostState($data /* = amtc json_decoded output */,$opt,$last/*states*/) {
     // map amtc string output to db-usable open_port(int) value
     $rportmap = array('ssh'=>22, 'rdp'=>3389, 'none'=>0, 'skipped'=>0, 'noscan'=>0);
-    // fetch last state of all hosts
-    $last = Array();
-    foreach( Laststate::find_many() as $host ) {
-      $last[$host->hostname] = $host->as_array();
-    }
     // map hostname -> id (amtc has no clue of those IDs...); improve...
     $hostnameMap = Array();
     foreach (Host::find_many() as $host) {
@@ -320,12 +322,22 @@ class AmtcwebSpooler {
       if (!isset($last[$host])) {
         isset($opt['v']) && printf("NEW %s: initially set [%d|%d|%d] (%s)\n", $host,
                                 $hostnow->amt, $hostnow->http, $rportmap[$hostnow->oport], $hostnow->msg);
+        // Insert into statelog/history table
         $r = Statelog::create();
         $r->state_amt  = $hostnow->amt;
         $r->state_http = $hostnow->http;
         $r->host_id    = $hostnameMap[$host];
         $r->open_port  = $rportmap[$hostnow->oport];
         $r->save();
+        // Insert into current-state/laststate table
+        $x = Laststate::create();
+        $x->state_amt  = $hostnow->amt;
+        $x->state_http = $hostnow->http;
+        $x->host_id    = $hostnameMap[$host];
+        $x->hostname   = $host;
+        $x->state_begin= time();
+        $x->open_port  = $rportmap[$hostnow->oport];
+        $x->save();
         // save $hostnow->msg here!
       } elseif ( $hostnow->amt  != $last[$host]['state_amt'] ||
                  $hostnow->http != $last[$host]['state_http'] ||
@@ -340,6 +352,14 @@ class AmtcwebSpooler {
         $r->host_id    = $hostnameMap[$host];
         $r->open_port  = $rportmap[$hostnow->oport];
         $r->save();
+        $x = Model::factory('Laststate')->where('host_id',$hostnameMap[$host])->find_one();
+        $x->state_amt  = $hostnow->amt;
+        $x->state_http = $hostnow->http;
+        $x->host_id    = $hostnameMap[$host];
+        $x->hostname   = $host;
+        $x->state_begin= time();
+        $x->open_port  = $rportmap[$hostnow->oport];
+        $x->save();
         // save $hostnow->msg here!
       } else {
         // this should happen most of the time: no change. only tell in -debug mode.

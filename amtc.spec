@@ -9,8 +9,11 @@ URL:		https://github.com/schnoddelbotz/amtc
 Source0:	https://github.com/schnoddelbotz/amtc/archive/amtc-#AMTCV#.tar.gz
 BuildRoot:	%(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
-BuildRequires:  libcurl-devel,gnutls-devel
-Requires: libcurl,gnutls
+BuildRequires:  libcurl-devel
+BuildRequires:  gnutls-devel
+BuildRequires:  vim-common
+Requires:       libcurl
+Requires:       gnutls
 
 ################################################################################
 # binary RPM: amtc
@@ -43,11 +46,12 @@ rm -rf %{buildroot}
 %defattr(-,root,root,-)
 %doc
 /usr/bin/amtc
+/usr/share/man/man1/amtc.1.gz
 
 %changelog
 
 ################################################################################
-# binary RPM: amtc-web 
+# binary RPM: amtc-web
 
 %package web
 Summary:	Remote power management Web-GUI for intel vPro/AMT&DASH hosts, using amtc

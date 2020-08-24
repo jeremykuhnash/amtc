@@ -2,7 +2,7 @@
 -- mysql.sql - part of amtc-web, part of amtc
 -- https://github.com/schnoddelbotz/amtc
 --
--- amtc-web SQLite schema-only dump
+-- amtc-web MySQL schema-only dump
 --
 
 SET foreign_key_checks = 0;
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS host (
   id                INTEGER      NOT NULL AUTO_INCREMENT PRIMARY KEY,
   ou_id             INTEGER      NOT NULL,
   hostname          VARCHAR(64)  NOT NULL,
-  enabled           INTEGER      DEFAULT 1,
+  enabled           INTEGER      DEFAULT 1, -- STILL not used :(
 
   FOREIGN KEY(ou_id) REFERENCES ou(id)
 );
@@ -65,16 +65,25 @@ CREATE TABLE IF NOT EXISTS statelog (
   state_amt         INTEGER(1),
   state_http        INTEGER(2),
 
-  FOREIGN KEY(host_id) REFERENCES host(id)
+  FOREIGN KEY(host_id) REFERENCES host(id) ON DELETE CASCADE
 );
 CREATE TRIGGER timestampTrigger BEFORE INSERT ON statelog FOR EACH ROW SET new.state_begin = UNIX_TIMESTAMP(NOW());
 CREATE INDEX logdata_ld ON statelog (state_begin);
 CREATE INDEX logdata_pd ON statelog (host_id);
-CREATE VIEW laststate AS     -- ... including fake id column to make e-d happy
-        SELECT s1.*,h.hostname,h.id AS id
-        FROM host h, statelog s1
-        LEFT JOIN statelog s2 ON s1.host_id=s2.host_id AND s1.state_begin < s2.state_begin
-        WHERE h.id=s1.host_id AND s2.state_begin IS NULL ORDER BY s1.host_id;
+CREATE TABLE IF NOT EXISTS laststate (
+  id                INTEGER      NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  host_id           INTEGER      NOT NULL,
+  hostname          VARCHAR(64)  NOT NULL,
+  state_begin       INTEGER,
+  open_port         INTEGER      DEFAULT NULL,
+  state_amt         INTEGER(1),
+  state_http        INTEGER(2),
+
+  FOREIGN KEY(host_id) REFERENCES host(id) ON DELETE CASCADE
+);
+CREATE VIEW logday AS
+  SELECT DISTINCT(date(from_unixtime(state_begin))) AS id
+  FROM statelog;
 
 -- amt(c) option sets
 CREATE TABLE IF NOT EXISTS optionset (
@@ -115,6 +124,6 @@ CREATE TABLE job (
   proc_pid          INTEGER, -- process id of currently running job
 
   description       VARCHAR(32), -- to reference it e.g. in logs (insb. sched)
-  FOREIGN KEY(ou_id) REFERENCES ou(id),
+  FOREIGN KEY(ou_id) REFERENCES ou(id) ON DELETE CASCADE,
   FOREIGN KEY(user_id) REFERENCES user(id)
 );

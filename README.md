@@ -3,6 +3,11 @@ amtc [![Build Status](https://travis-ci.org/schnoddelbotz/amtc.svg?branch=master
 
 `amtc` - Intel [vPro](http://de.wikipedia.org/wiki/Intel_vPro) [AMT](http://en.wikipedia.org/wiki/Intel_Active_Management_Technology) / [WS-Management](http://en.wikipedia.org/wiki/WS-Management) mass remote power management tool
 
+NOTE!
+=====
+amtc works fine and there are currently no known issues.
+Anyhow -- you may want to look into [amtgo](https://github.com/schnoddelbotz/amtgo), which combines amtc's and amtc-web's functionality in a single, golang-based binary; Apache, PHP and cron no longer needed for amtc-web!
+
 features
 ========
 
@@ -13,22 +18,17 @@ features
 * currently builds fine on linux and OSX (and windows via cygwin; unverified since 0.4.0)
 * allows quick and comfortable mass-power control via shell and...
 * comes with a [EmberJS](http://www.emberjs.com/)-based web interface called `amtc-web`,
-  that depends on [Slim](http://www.slimframework.com/) and 
+  that depends on [Slim](http://www.slimframework.com/) and
   [Idiorm and Paris](http://j4mie.github.io/idiormandparis/) to provide a JSON backend
   for these `amtc-web` features:
-  * realtime power state monitoring via AMT© including OS TCP port probing/detection
+  * power state monitoring via AMT© including OS TCP port probing/detection
   * anachronous OOB power control using a database-driven job queue
   * power/OS-monitoring logging with [notyet:] graphing
   * management of master file data like rooms and hosts to control
   * setup (of atmc-web itself, i.e. providing database connection details etc.)
 * acts as a tool for flexible and robust scheduled remote power management (which is true for amtc itself and amtc-web; amtc-web just adds another layer of comfort regarding shell interaction with your many hosts).
 
-<img src="screenshots/setup.png" width="200px" />
-<img src="screenshots/dashboard.png" width="200px" />
-<img src="screenshots/monitor-states.png" width="200px" />
-<img src="screenshots/monitor-selection.png" width="200px" />
-<img src="screenshots/manage-addhosts.png" width="200px" />
-<img src="screenshots/manage-schedule.png" width="200px" />
+<img src="screenshots/setup.png" width="200px" /> <img src="screenshots/dashboard.png" width="200px" /> <img src="screenshots/monitor-states.png" width="200px" /> <img src="screenshots/monitor-selection.png" width="200px" /> <img src="screenshots/manage-addhosts.png" width="200px" /> <img src="screenshots/manage-schedule.png" width="200px" />
 
 usage
 =====
@@ -45,7 +45,10 @@ usage
   -D(own)     powerdown
   -C(ycle)    powercycle
   -R(eset)    reset
+  -X          select PXE as device for next boot (AMT 9.0+)
+  -H          select HDD as device for next boot (AMT 9.0+)
   -S(hutdown) using AMT graceful shutdown (AMT 9.0+)
+  -(re)B(oot) using AMT graceful reset    (AMT 9.0+)
   -L(ist)  valid wsman <classname>s for -E(numeration)
   -E(numerate)<classname>       enumerate/list settings
   -M(odify)   <setting>=<value> modify wsman settings
@@ -72,13 +75,16 @@ usage
 
 status
 ======
-ever-pre-1.0. just for fun. against all odds. works for me.
+ever-pre-1.0. just for fun. against all odds. works for me... check the [changelog](CHANGELOG.md).
 
-amtc 0.8.0 introduced the -E option, which serves for retreiving system
+You may want to [give amtc-web a try](http://jan.hacker.ch/projects/amtc/demo) --
+just login with setup default credentials (admin/amtc). The demo page runs off a read-only
+sqlite database so you shouldn't be able to make any changes.
+
+`amtc` 0.8.0 introduced the -E option, which serves for retreiving system
 configuration and asset management data. Currently, amtc will not parse
-those replies and just dump the raw SOAP reply. amtc-web currently
-offers no way yet to retreive/display those values. This will improve,
-sooner or later... stay tuned.
+those replies and just dump the raw SOAP reply. amtc-web ~~currently~~
+offers no way yet to retreive/display those values.
 
 Honestly, in some aspects, `amtc` [still] is a hack. The most obvious
 one is: amtc has no clue of SOAP. It dumbly replays control commands
@@ -97,14 +103,15 @@ license
 This project is published under the [MIT license](LICENSE.txt).
 It heavily relies on bundled 3rd party OSS components that are listed in the
 in-app ['about' page](amtc-web/pages/about.md) of amtc-web;
-their individual license texts have been bundled into 
+their individual license texts have been bundled into
 [LICENSES-3rd-party.txt](amtc-web/LICENSES-3rd-party.txt). That file is also
 distributed with any [release of amtc](https://github.com/schnoddelbotz/amtc/releases).
 
 alternatives
 ============
+- [amtgo](https://github.com/schnoddelbotz/amtgo) implements functionality of amtc and amtc-web in a single binary. Maybe give it a try first!
 - [amttool](http://www.kraxel.org/cgit/amtterm/tree/amttool):
-  Without amttool, there would be no amtc. Thanks! 
+  Without amttool, there would be no amtc. Thanks!
   amttool is implemented in perl and intended for interactive, verbose single-host operation.
   amtc is implemented in C, and by using threads optimized for quick, succinct (non-)interactive mass-operation.
 - [amttool_tng](http://sourceforge.net/projects/amttool-tng):

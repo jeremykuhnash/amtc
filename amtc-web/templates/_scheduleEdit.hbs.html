@@ -1,0 +1,55 @@
+<form id="optionsetEditForm">
+ <fieldset>
+    <div class="form-group">
+      <label for="description">Description</label>
+        {{input class="form-control" type="text" value=model.description insert-newline="doneEditingReturn" placeholder="Power-Up|Down Room when ..."}}
+    </div>
+
+    <div class="checkbox"><label>{{input type="checkbox" checked=model.on_monday}} Monday</label></div>
+    <div class="checkbox"><label>{{input type="checkbox" checked=model.on_tuesday}} Tuesday</label></div>
+    <div class="checkbox"><label>{{input type="checkbox" checked=model.on_wednesday}} Wednesday</label></div>
+    <div class="checkbox"><label>{{input type="checkbox" checked=model.on_thursday}} Thursday</label></div>
+    <div class="checkbox"><label>{{input type="checkbox" checked=model.on_friday}} Friday</label></div>
+    <div class="checkbox"><label>{{input type="checkbox" checked=model.on_saturday}} Saturday</label></div>
+    <div class="checkbox"><label>{{input type="checkbox" checked=model.on_sunday}} Sunday</label></div>
+
+    <div class="form-group">
+      <label for="start_time">Start time</label>
+      {{input class="form-control" type="time" value=model.human_start_time insert-newline="doneEditingReturn"}}
+    </div>
+
+    <div class="form-group">
+      <label for="action">OU / Room</label>
+      {{#if controllers.ous.ous.content}}
+        {{my-select
+          content=controllers.ous.ous.content
+          selection=model.ou_id
+          action=(action (mut model.ou_id))
+          prompt="Choose Organizational Unit / Room"
+          optionValuePath="id"
+          optionLabelPath="name"
+        }}
+      {{/if}}
+    </div>
+
+    <div class="form-group">
+      <label for="action">Action</label>
+      {{my-select
+        content=validCommands
+        selection=model.amtc_cmd
+        action=(action (mut newCommand))
+        optionValuePath="cchar"
+        optionLabelPath="cmd"
+        comparisonAttr="cchar"
+        prompt="Select command to execute"
+      }}
+    </div>
+
+    <div class="form-group">
+      <label>Delay</label>
+        {{input class="form-control" type="number" step="any" min="0" value=model.amtc_delay insert-newline="doneEditingReturn" placeholder="Delay in seconds between each PC"}}
+    </div>
+
+ </fieldset>
+</form>
+<div class="clearboth"></div><br>

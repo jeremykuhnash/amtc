@@ -50,7 +50,7 @@ CREATE TABLE "host" (
   "hostname"          VARCHAR(64)  NOT NULL,
   "enabled"           INTEGER      DEFAULT 1,
 
-  FOREIGN KEY(ou_id) REFERENCES ou(id)
+  FOREIGN KEY(ou_id) REFERENCES ou(id) ON DELETE RESTRICT
 );
 
 -- state logging of hosts. log occurs upon state change.
@@ -61,13 +61,25 @@ CREATE TABLE "statelog" (
   "state_amt"         INTEGER(1),
   "state_http"        INTEGER(2),
 
-  FOREIGN KEY(host_id) REFERENCES host(id)
+  FOREIGN KEY(host_id) REFERENCES host(id) ON DELETE CASCADE
 );
 CREATE INDEX "logdata_ld" ON "statelog" ("state_begin");
 CREATE INDEX "logdata_pd" ON "statelog" ("host_id");
-CREATE VIEW  "laststate"  AS   -- ... including fake id column to make e-d happy
-  SELECT host_id AS id, hostname, host_id,max(state_begin) AS state_begin,open_port,state_amt,state_http
-  FROM statelog,host WHERE statelog.host_id=host.id GROUP BY host_id;
+CREATE TABLE "laststate" (
+  "id"                INTEGER      PRIMARY KEY AUTOINCREMENT,
+  "host_id"           INTEGER      NOT NULL,
+  "hostname"          VARCHAR(64)  NOT NULL,
+  "state_begin"       INTEGER(4)   DEFAULT (strftime('%s','now')),
+  "open_port"         INTEGER      DEFAULT NULL,
+  "state_amt"         INTEGER(1),
+  "state_http"        INTEGER(2),
+
+  FOREIGN KEY(host_id) REFERENCES host(id) ON DELETE CASCADE
+);
+CREATE VIEW "logday" AS
+  SELECT DISTINCT(date(state_begin,'unixepoch','localtime')) AS id
+  FROM statelog;
+
 
 -- amt(c) option sets
 CREATE TABLE "optionset" (
@@ -108,7 +120,7 @@ CREATE TABLE "job" (
   "proc_pid"          INTEGER, -- process id of currently running job
 
   "description"       VARCHAR(32), -- to reference it e.g. in logs (insb. sched)
-  FOREIGN KEY(ou_id) REFERENCES ou(id),
+  FOREIGN KEY(ou_id) REFERENCES ou(id) ON DELETE CASCADE,
   FOREIGN KEY(user_id) REFERENCES user(id)
 );
 

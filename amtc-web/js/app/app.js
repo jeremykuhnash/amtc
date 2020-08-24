@@ -7,29 +7,30 @@
  * Bookmarks...
  *  http://emberjs.com/guides/concepts/naming-conventions/
  *  http://ember-addons.github.io/bootstrap-for-ember/
+ *  http://emberjs.com/guides/routing/generated-objects/
  */
+
+'use strict';
 
 var attr = DS.attr;
 var hasMany = DS.hasMany;
 
-// http://stackoverflow.com/questions/24222457
-// /ember-data-embedded-records-current-state/24224682#24224682
-
 var App = Ember.Application.create({
-  //LOG_TRANSITIONS: true,
+  //LOG_TRANSITIONS: true, // basic logging of successful transitions
+  //LOG_TRANSITIONS_INTERNAL: true, // detailed logging of all routing steps
+  //LOG_RESOLVER: true,
   // http://discuss.emberjs.com/t/equivalent-to-document-ready-for-ember/2766
   ready: function() {
     // turn off splash screen
-    window.setTimeout( function(){
-      if (App.readCookie("isLoggedIn")) {
-        $('#splash').hide();
-        $('#backdrop').hide();
-      } else {
+    if (App.readCookie('isLoggedIn')) {
+      $('#splash').hide();
+      $('#backdrop').hide();
+    } else {
+      window.setTimeout( function(){
         $('#splash').fadeOut(1200);
         $('#backdrop').fadeOut(1000);
-      }
-    }, App.readCookie("isLoggedIn") ? 0 : 750);
-
+      }, 750);
+    }
     $(window).bind("load resize", function(){
       App.windowResizeHandler();
     });
@@ -37,11 +38,9 @@ var App = Ember.Application.create({
     // AMTCWEB_IS_CONFIGURED gets defined via included script rest-api.php/rest-config.js
     if (typeof AMTCWEB_IS_CONFIGURED != 'undefined' && AMTCWEB_IS_CONFIGURED===false && !window.location.hash.match('#/page')) {
       // unconfigured system detected. inform user and relocate to setup.php
-      humane.log('<i class="glyphicon glyphicon-fire"></i> '+
+      humane.log('<i class="fa fa-meh-o"></i> '+
                  'No configuration file found!<br>warping into setup ...', { timeout: 3000 });
-      window.setTimeout( function(){
-        window.location.href = '#/setup'; // how to use transitionToRoute here?
-      }, 3100);
+      window.location.href = '#/setup'; // how to use transitionToRoute here?
     }
 
     // just for demo... we have a flashing bolt as progress indicator :-)
@@ -61,21 +60,34 @@ var App = Ember.Application.create({
   pad: function(number, length) {
     return (number+"").length >= length ?  number + "" : this.pad("0" + number, length);
   },
+  successMessage: function(messageText,faClass,caller,redirTo) {
+    humane.log('<i class="fa fa-'+faClass+'"></i> '+messageText, { timeout: 1500, clickToClose: false });
+    window.location.href = '#/'+redirTo;
+  },
   // SB-Admin 2 responsiveness helper
   windowResizeHandler: function() {
-    topOffset = 50;
-    width = (window.innerWidth > 0) ? window.innerWidth : screen.width;
+    var topOffset = 50;
+    var width = (window.innerWidth > 0) ? window.innerWidth : screen.width;
     if (width < 768) {
       $('div.navbar-collapse').addClass('collapse');
       topOffset = 100; // 2-row-menu
     } else {
       $('div.navbar-collapse').removeClass('collapse');
     }
-    height = (window.innerHeight > 0) ? window.innerHeight : screen.height;
+    var height = (window.innerHeight > 0) ? window.innerHeight : screen.height;
     height = height - topOffset;
     if (height < 1) height = 1;
     if (height > topOffset) {
       $("#page-wrapper").css("min-height", (height) + "px");
+    }
+  },
+  ensureLoginForTarget: function(that,transition) {
+    if (!App.readCookie('isLoggedIn')) {
+      that.controllerFor('login').set('isLoggedIn',0);
+      that.controllerFor('login').set('previousTransition', transition);
+      that.transitionTo('login');
+    } else {
+      that.controllerFor('login').set('isLoggedIn',1);
     }
   },
   // 1:1 copy, THANKS! https://github.com/joachimhs/Montric/blob/master/Montric.View/src/main/webapp/js/app.js
@@ -103,47 +115,57 @@ var App = Ember.Application.create({
   }
 });
 
+Ember.onerror = function(err) {
+  var msg = 'Unkown error occured: '+ err;
+  if (typeof err.errors !== 'undefined') {
+    msg = err + '<p class="errDetails">' + err.errors[0].detail + '</p>';
+  }
+  humane.log('<i class="fa fa-frown-o"></i> '+msg, { timeout: 0, clickToClose: true });
+}
+
+// default Adapter for emberjs 2.0 is JSONAdapter - override it (until migrated?)
+App.ApplicationAdapter = DS.RESTAdapter.extend({});
+
 // Routes
+
 App.Router.map(function() {
   this.route('login');
-  this.route('logout');
   this.route('setup');
-  this.resource('logs');
-  this.resource('energy');
-  //this.resource('schedule');
-  this.resource('page', { path: '/page/:id' });
+  this.route('logs');
+  this.route('energy');
+  this.route('systemhealth');
+  this.route('page', { path: '/page/:id' });
 
-  this.resource('ous', function() {
+  this.route('ous', function() {
     this.route('new');
   });
-  this.resource('ou', { path: '/ou/:id' }, function() {
+  this.route('ou', { path: '/ou/:id' }, function() {
     this.route('edit');
     this.route('hosts');
     this.route('monitor');
     this.route('statelog');
   });
 
-  this.resource('users', function() {
+  this.route('users', function() {
     this.route('new');
   });
-  this.resource('user', { path: '/user/:id' }, function() {
+  this.route('user', { path: '/user/:id' }, function() {
     this.route('edit');
   });
 
-  this.resource('optionsets', function() {
+  this.route('optionsets', function() {
     this.route('new');
   });
-  this.resource('optionset', { path: '/optionset/:id' }, function() {
+  this.route('optionset', { path: '/optionset/:id' }, function() {
     this.route('edit');
   });
 
-  this.resource('schedules', function() {
+  this.route('schedules', function() {
     this.route('new');
   });
-  this.resource('schedule', { path: '/schedule/:id' }, function() {
+  this.route('schedule', { path: '/schedule/:id' }, function() {
     this.route('edit');
   });
-
 });
 
 Ember.Route.reopen({
@@ -151,46 +173,44 @@ Ember.Route.reopen({
   render: function(controller, model) {
     this._super();
     window.scrollTo(0, 0);
-  },
-
-  init: function() {
-    // this will redirect any user arriving e.g. via bookmark -- without cookie.
-    // done here, as ember-data routes would trigger errors without valid sess.
-    var U = App.readCookie("username");
-    var L = App.readCookie("isLoggedIn");
-    if (U == null && L == null && !window.location.href.match('/login') && !window.location.href.match('/setup') && !window.location.href.match('/page')) {
-      console.log('NULL USER detected on Ember.Route.init(); redir to #/login!');
-      window.location.href = '#/login';
-    }
-    this._super();
   }
-});
-App.Router.reopen({
-  routeDidChange: function() {
-    // this will redirect any user that clicks on a link w/o having a cookie
-    // console.log('AppRouter didTransition to: ' + url);
-    var url = this.get('url')
-    var U = App.readCookie("username");
-    var L = App.readCookie("isLoggedIn");
-    if (U == null && !url.match('/page') && !window.location.href.match('/setup')) {
-      console.log('NULL USER detected on App.Router.routeDidChange(); redir to #/login!' + window.location.href);
-      window.location.href = '#/login';
-    }
-  }.on('didTransition')
 });
 
 App.PageRoute = Ember.Route.extend({
   model: function(params) {
-    console.log("PageRoute model() fetching single page");
-    return this.store.find('page', params.id);
+    // fetches static markdown files from server
+    // recycled from markdownBrauser
+    var store = this.store;
+    var url = 'page/'+ params.id + '.md';
+    var existantRecord = null;
+    var test = store.peekAll('page');
+    test.forEach(function(item) {
+      if (item.id === params.id) {
+        existantRecord = item;
+      }
+    });
+    if (existantRecord) {
+      return existantRecord;
+    } else {
+      return Ember.$.get(url).then(function(data) {
+        var page = {
+          'id': params.id,
+          'page_content': data,
+          'file_name': params.id+'.md'
+        };
+        // create a real e-d record to enjoy computed propoerties
+        var record = store.createRecord('page', page);
+        return record;
+      });
+    }
   }
 });
 App.OuRoute = Ember.Route.extend({
   model: function(params) {
-    //console.log("App.OuRoute model(), find and set currentOU -> " + params.id);
     this.set('currentOU', params.id); // hmm, unneeded? better...how?
     return this.store.find('ou', params.id);
   },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.IndexRoute = Ember.Route.extend({
   setupController: function(controller, model) {
@@ -199,7 +219,6 @@ App.IndexRoute = Ember.Route.extend({
     if (Ember.isNone(self.get('pollster'))) {
       self.set('pollster', App.Pollster.create({
         onPoll: function() {
-          // console.log('IDXpoll!');
           self.send('refresh');
         }
       }));
@@ -216,7 +235,8 @@ App.IndexRoute = Ember.Route.extend({
         this.store.find('laststate');
         this.store.find('notification'); // me too!
     }
-  }
+  },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.OuMonitorRoute = Ember.Route.extend({
   setupController: function(controller, model) {
@@ -225,12 +245,16 @@ App.OuMonitorRoute = Ember.Route.extend({
     if (Ember.isNone(self.get('pollster'))) {
       self.set('pollster', App.Pollster.create({
         onPoll: function() {
-          // console.log('OUpoll!');
           self.send('refresh');
         }
       }));
     }
     self.get('pollster').start();
+  },
+  afterModel: function() {
+    this.controllerFor("ouMonitor").send('updateSelectedHosts');
+    this.controllerFor("ouMonitor").set('selectedHostsCount',0);
+    $("#hselect div").removeClass("isActive");
   },
   // This is called upon exiting the Route
   deactivate: function() {
@@ -242,72 +266,73 @@ App.OuMonitorRoute = Ember.Route.extend({
         this.store.find('laststate');
         // this.store.find('notification'); // me too!
     }
-  }
+  },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.OusRoute = Ember.Route.extend({
   model: function(params) {
-    console.log("App.OusRoute model(), FETCH OUS");
     return this.store.find('ou');
-  }
+  },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.OusNewRoute = Ember.Route.extend({
   model: function() {
-    console.log("OusNewRoute model() creating new OU");
     return this.store.createRecord('ou');
-  }
+  },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.LaststatesRoute = Ember.Route.extend({
   // RETURN last states via db view laststates (->table statelogs)
   model: function(params) {
-    console.log("App.LaststatesRoute model(), fetch last state of pcs");
     return this.store.find('laststate');
-  }
+  },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.UserRoute = Ember.Route.extend({
   model: function(params) {
     return this.store.find('user', params.id);
   },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.UsersRoute = Ember.Route.extend({
   model: function() {
-    console.log("UsersRoute model() fetching users");
     return this.store.find('user');
-  }
+  },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.UsersNewRoute = Ember.Route.extend({
   model: function() {
-    console.log("UsersNewRoute model() creating new user");
     return this.store.createRecord('user');
-  }
+  },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.OptionsetRoute = Ember.Route.extend({
   model: function(params) {
-    console.log("OptionsetRoute model() for id " + params.id);
     //this.set('currentOU', params.id); // hmm, unneeded? better...how?
     return this.store.find('optionset', params.id);
   },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.OptionsetsRoute = Ember.Route.extend({
   model: function() {
-    console.log("OptionsetsRoute model() fetching optionsets");
     return this.store.find('optionset');
-  }
+  },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.OptionsetsNewRoute = Ember.Route.extend({
   model: function() {
-    console.log("OptionsetsNewRoute model() creating new optionset");
     return this.store.createRecord('optionset');
-  }
+  },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.NotificationsRoute = Ember.Route.extend({
   model: function() {
-    console.log("NotificationsRoute model() fetching notifications");
     return this.store.find('notification');
-  }
+  },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.SetupRoute = Ember.Route.extend({
   setupController: function(controller,model) {
-    console.log('ApplicationRoute setupController() triggering /phptests');
     this._super(controller,model);
       var p=this;
       $.ajax( { url: "rest-api.php/phptests", type: "GET" }).then(
@@ -338,7 +363,7 @@ App.SetupRoute = Ember.Route.extend({
                config_writable && data_writable && curl_supported) ? true : false);
         },
         function(response){
-          humane.log('<i class="glyphicon glyphicon-fire"></i> Fatal error:'+
+          humane.log('<i class="fa fa-meh-o"></i> Fatal error:'+
                      '<p>webserver seems to lack PHP support!</p>', { timeout: 0, clickToClose: true });
         }
       );
@@ -346,34 +371,37 @@ App.SetupRoute = Ember.Route.extend({
 });
 App.SchedulesRoute = Ember.Route.extend({
   model: function() {
-    console.log("SchedulesRoute model() fetching jobs with type=sched");
     return this.store.find('job');
-  }
+  },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.SchedulesNewRoute = Ember.Route.extend({
   model: function() {
-    console.log("SchedulesNewRoute create record");
     return this.store.createRecord('job');
-  }
+  },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 App.ScheduleRoute = Ember.Route.extend({
   model: function(params) {
-    console.log("SchedulesRoute model() fetching job with id=" + params.id);
     return this.store.find('job', params.id);
-  }
+  },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
+});
+App.SystemhealthRoute = Ember.Route.extend({
+  model: function() {
+    return Ember.$.getJSON('rest-api.php/systemhealth').then(function(data) {
+      return data;
+    });
+  },
+  actions: {
+    refreshData: function() {
+      this.refresh();
+    }
+  },
+  beforeModel: function(t) {App.ensureLoginForTarget(this,t);}
 });
 
 // Views
-/*
-// http://emberjs.com/api/classes/Ember.View.html
-MyView = Ember.View.extend({
-  classNameBindings: ['propertyA', 'propertyB'],
-  propertyA: 'from-a',
-  propertyB: function() {
-    if (someLogic) { return 'from-b'; }
-  }.property()
-});
-*/
 
 App.ApplicationView = Ember.View.extend({
   didInsertElement: function() {
@@ -395,61 +423,28 @@ App.OuMonitorView = Ember.View.extend({
       },
       filter: '.pc'
     });
-    //
-    var powerstates = {
-      "pc":"any",       "S0":"on",        "S3":"sleep",
-      "S4":"hibernate", "S5":"soft-off",  "S16":"no-reply",
-      "ssh":"SSH",      "rdp":"RDP",      "none":"No-OS"
-    };
-    var osicons = {
-      'SSH'     :'<i class="fa fa-fw fa-linux"></i> ',
-      'RDP'     :'<i class="fa fa-fw fa-windows"></i> ',
-      'soft-off':'<i class="fa fa-fw fa-power-off"></i> ',
-      'No-OS'   :'<i class="fa fa-fw fa-ban red"></i> ',
-    };
-    //
-    $("#hselect").html("");
-    $.each(powerstates, function(key, value) {
-      var icon = osicons[value] ? osicons[value] : '';
-      $("#hselect").append('<div id="'+value+'" class="'+key+' pc">'+icon+value+'</div>');
-      $("#"+value).click(function() {
-        modifySelection(value,$(this).attr("class").split(' ')[0]);
-      });
-    });
-    $("#hselect span").css( 'cursor', 'pointer' );
   },
-
   willClearRender: function() {
-    $("#livectrl").hide();
-    $("#hosts").hide();
     $("#hosts").selectable("destroy");
     $(".pc").removeClass("ui-selected");
-    var controller = App.__container__.lookup("controller:ouMonitor");
-    controller.send('updateSelectedHosts');
-  },
-
-
-  roomSwitched: (function(){
-    // http://madhatted.com/2013/6/8/lifecycle-hooks-in-ember-js-views
-    Ember.run.scheduleOnce('afterRender', this, this.roomSwitchCleanup);
-  }).observes('controller.hosts.@each'),
-
-  roomSwitchCleanup: function(){
-    $(".pc").removeClass("ui-selected");
-    var controller = App.__container__.lookup("controller:ouMonitor");
-    controller.send('updateSelectedHosts');
-    $("#hselect span").removeClass("isActive");
+  }
+});
+App.OuStatelogView = Ember.View.extend({
+  keyDown: function(e) {
+    if(e) {
+      // tbd ...
+      //this.get('controller').send('changeDay', { foo: bar });
+    }
   }
 });
 App.OuHostsView = Ember.View.extend({
   // add/remove hosts view
   didInsertElement: function() {
-    console.log('OuHostsView making hosts selectable');
     $("#cfghosts").selectable({
       stop: function(){
         // trigger controller -- selection was modified
-        //var controller = App.__container__.lookup("controller:ouHosts");
-        //controller.send('updateSelectedHosts');
+        var controller = App.__container__.lookup("controller:ouHosts");
+        controller.send('updateHostSelection');
       },
       filter: '.pc'
     });
@@ -547,7 +542,7 @@ App.Pollster = Ember.Object.extend({
   interval: function() {
     // tbd: make adjustable / reseatable
     // after submitting control functions, it should be increased.
-    return 7500; // Time between polls (in ms)
+    return 10000; // Time between polls (in ms)
   }.property().readOnly(),
   // Schedules the function `f` to be executed every `interval` time.
   schedule: function(f) {
@@ -562,16 +557,14 @@ App.Pollster = Ember.Object.extend({
   },
   // Starts the pollster, i.e. executes the `onPoll` function every interval.
   start: function() {
-    //console.log('Stopping all existing timers');
     // ensures we don't create more traffic than desired...
     Ember.run.cancelTimers();
-    //console.log('Starting timer ');
     this.set('timer', this.schedule(this.get('onPoll')));
   }
 });
 
 // Controllers
-// see http://emberjs.com/guides/routing/generated-objects/
+
 App.ApplicationController = Ember.Controller.extend({
   appName: 'amtc-web', // available as {{appName}} throughout app template
   needs: ["ou","ous","notifications","login"],
@@ -585,45 +578,19 @@ App.ApplicationController = Ember.Controller.extend({
       this.transitionToRoute('search', { query: query });
     },
     selectNode: function(node) {
-      //console.log('TreeMenuComponent node: ' + node);
       this.set('selectedNode', node.get('id'));
       this.transitionToRoute('ou.monitor', node.get('id') )
+    },
+    goLogout: function() {
+      this.get('controllers.login').send('doLogout');
     }
-
   },
 });
-
 App.LoginController = Ember.Controller.extend({
-  needs: ["user"],
-
-  isLoggingIn: false,
-  isAuthenticated: false,
-  uuidToken: null,
+  isLoggedIn: 0,
   authFailed: null,
-
-  sessionid: null,
   username: null,
   password: null,
-
-  init: function() {
-    var cuser = App.readCookie("username");
-    var isL = App.readCookie("isLoggedIn");
-    this.set('username', cuser);
-    this.set('isLoggedIn', isL);
-    console.log('INIT UserCtrl with user ... ' + cuser);
-  },
-
-  isLoggedInObserver: function() {
-    // third place to redirect users w/o login sess cookie
-    console.log('Fetching user: ' + this.get('username'));
-    if (this.get('username')) {
-      this.set('content', this.store.find('user', this.get('username')));
-    } else if (!window.location.href.match('/page')) {
-      // redir to /login if non-/page (.md doc) request
-      this.set('content', null);
-      this.transitionToRoute('login');
-    }
-  }.observes('isLoggedIn').on('init'),
 
   actions: {
     doLogin: function(assertion) {
@@ -638,20 +605,24 @@ App.LoginController = Ember.Controller.extend({
         data: {username: u, password: p},
 
         success: function(res, status, xhr) {
-          console.log(res);
-          if (res.exceptionMessage) {
+          if (res.result=="success") {
+            self.set('isLoggingIn', false);
+            self.set('password',''); // no-longer-required
+            self.set('isLoggedIn', true); // will load/unhide real menu
+            self.set('authFailed', false);
+            App.createCookie('isLoggedIn',1);
+            //INTENSION: redir to initially requested URL upon successful auth
+            var previousTransition = self.get('previousTransition');
+            if (previousTransition) {
+              self.set('previousTransition', null);
+              previousTransition.retry();
+            } else {
+              // Default back to homepage
+              self.transitionToRoute('index');
+            }
+          } else {
             self.set('authFailed', true);
             $("#password").effect( "shake" );
-          } else if (res.result=='success') {
-            console.log('AUTH SUCCESS!');
-            App.createCookie("username", u);
-            App.createCookie("isLoggedIn", 1);
-            self.set('isLoggingIn', false);
-            self.set('password','no-longer-required');
-            self.set('isAuthenticated', true);
-            // self.transitionToRoute('index');
-            // lazy way, retrigger ember-data loads...
-            window.location.href = 'index.html';
           }
         },
         error: function(xhr, status, err) {
@@ -660,96 +631,61 @@ App.LoginController = Ember.Controller.extend({
       });
     },
     doLogout: function() {
-      //controller.set('content', null);
-      this.set('isAuthenticated', false);
+      var self = this;
       $.ajax({
+        dataType: "json",
         type: 'GET',
         url: 'rest-api.php/logout',
         success: function(xhr, status, err) {
-          console.log('onlogout: ');
-          console.log(xhr);
-          App.eraseCookie("amtcweb");
-          App.eraseCookie("username");
-          App.eraseCookie("isLoggedIn");
-          humane.log('<i class="glyphicon glyphicon-fire"></i> Signed out successfully',
-            { timeout: 1000, clickToClose: false });
-          window.setTimeout( function(){
-            window.location.href='index.html'; // not nice ... but ok 4 now
-          }, 1100);
+          if (xhr.error) {
+            self.set('isLoggedIn', false);
+            App.eraseCookie('isLoggedIn');
+            self.transitionToRoute('login');
+          } else if (xhr.message && xhr.message=="success") {
+            humane.log('<i class="fa fa-smile-o"></i> Signed out successfully',
+               { timeout: 1000, clickToClose: false });
+            self.set('isLoggedIn', false);
+            App.eraseCookie('isLoggedIn');
+            self.transitionToRoute('login');
+          } else {
+            humane.log('<i class="fa fa-meh-o"></i> Weird error!',
+               { timeout: 0, clickToClose: true });
+          }
         },
         error: function(xhr, status, err) {
-          console.log(xhr);
-          console.log('Error while logging out: ' + err + " status: " + status);
+          humane.log('<i class="fa fa-meh-o"></i> <b>Fatal error:</b><br>'+err,
+               { timeout: 0, clickToClose: true });
         }
         });
     }
   },
 });
-App.LogoutController = Ember.Controller.extend({
-  needs: ["user", "login"],
-  init: function() {
-    var cuser = App.readCookie("username");
-    var isL = App.readCookie("isLoggedIn");
-    console.log('LOGOUT UserCtrl with user ... ' + cuser);
-    this.get('controllers.login').send('doLogout');
-  },
-});
-// Index/Dashboard
 App.IndexController = Ember.Controller.extend({
   needs: ["notifications","laststates"],
 });
-// Index page notification messages ('job completed') et al
 App.NotificationsController = Ember.ArrayController.extend({
   notifications: function() {
-    console.log("NotificationsController notifications() - fetching.");
     return this.get('store').find('notification');
   }.property()
 });
-// Users
-
-// Organizational Units
 App.UserEditController = Ember.Controller.extend({
   needs: ["ous"],
-
   actions: {
     removeUser: function () {
       if (confirm("Really delete this user?")) {
-        console.log('FINALLY Remove it');
         var device = this.get('model');
         device.deleteRecord();
-        device.save().then(function() {
-          humane.log('<i class="glyphicon glyphicon-saved"></i> Deleted successfully',
-            { timeout: 1500, clickToClose: false });
-          console.log("FIXME - transtionToRoute doesnt work here...");
-          window.location.href = '#/users';
-        }, function(response){
-          var res = jQuery.parseJSON(response.responseText);
-          var msg = (typeof res.exceptionMessage=='undefined') ?
-                    'Check console, please.' : res.exceptionMessage;
-          humane.log('<i class="glyphicon glyphicon-fire"></i> Ooops! Fatal error:'+
-                     '<p>'+msg+'</p>', { timeout: 0, clickToClose: true });
-        }
-      )};
+        device.save().then(function(){
+          App.successMessage('Deleted successfully','trash',this,'users');
+        });
+      }
     },
-
     doneEditingReturn: function() {
-      console.log(this.get('model'));
-      this.get('model').save().then(function() {
-        humane.log('<i class="glyphicon glyphicon-saved"></i> Saved successfully',
-          { timeout: 800 });
-        window.location.href = '#/users';
-      }, function(response){
-        var res = jQuery.parseJSON(response.responseText);
-        var msg = (typeof res.exceptionMessage=='undefined') ?
-                   'Check console, please.' : res.exceptionMessage;
-        humane.log('<i class="glyphicon glyphicon-fire"></i> Ooops! Fatal error:'+
-                   '<p>'+msg+'</p>', { timeout: 0, clickToClose: true });
-        device.rollback();
-        }
-      );
+      this.get('model').save().then(function(){
+        App.successMessage('Saved successfully','save',this,'users');
+      });
     }
   }
-
 });
 App.UsersNewController = App.UserEditController;
 // Organizational Units
@@ -762,65 +698,40 @@ App.OuEditController = Ember.Controller.extend({
   needs: ["optionsets","ous"],
   actions: {
     removeOu: function () {
-      if (confirm("Really delete this OU?")) {
-        console.log('FINALLY Remove it' + this.get('controllers.ous.ous'));
+      if (confirm("Really delete this OU and associated Jobs?")) {
         var device = this.get('model');
-        console.log("DEV id: "+device.id);
-        console.log("DEL: "+device.get('isDeleted'));
         device.deleteRecord();
-        console.log("DEL: "+device.get('isDeleted'));
-
-        device.save().then(function(x) {
-          console.log('DELETE SUCCESS');
-          humane.log('<i class="glyphicon glyphicon-saved"></i> Deleted successfully',
-            { timeout: 1500, clickToClose: false });
-          console.log("FIXME - transtionToRoute doesnt work here...");
-          window.location.href = '#/ous';
-        }, function(response){
-          var res = jQuery.parseJSON(response.responseText);
-          var msg = (typeof res.exceptionMessage=='undefined') ?
-                    'Check console, please.' : res.exceptionMessage;
-          humane.log('<i class="glyphicon glyphicon-fire"></i> Ooops! Fatal error:'+
-                     '<p>'+msg+'</p>', { timeout: 0, clickToClose: true });
-          device.rollback();
+        device.save().then(function(){
+          App.successMessage('Deleted successfully','trash',this,'ous');
+        }, function(err) {
+          device.rollbackAttributes(); // restore 'menu entry' for room deleted above
+          var msg = "Unknown error occured!";
+          if (typeof err.errors !== 'undefined') {
+            msg = err + '<p class="errDetails">' + err.errors[0].detail + '</p>';
+          }
+          humane.log('<i class="fa fa-warning"></i> '+msg, { clickToClose: true });
         });
       }
     },
-
     doneEditingReturn: function() {
-      this.get('model').save().then(function() {
-        humane.log('<i class="glyphicon glyphicon-saved"></i> Saved successfully',
-            { timeout: 800 });
-        window.location.href = '#/ous';
-      }, function(response){
-          var res = jQuery.parseJSON(response.responseText);
-          var msg = (typeof res.exceptionMessage=='undefined') ?
-                    'Check console, please.' : res.exceptionMessage;
-          humane.log('<i class="glyphicon glyphicon-fire"></i> Ooops! Fatal error:'+
-                     '<p>'+msg+'</p>', { timeout: 0, clickToClose: true });
-      } );
+      this.get('model').save().then(function(){
+        App.successMessage('Saved successfully','save',this,'ous');
+      });
     }
   }
 });
 App.OusController = Ember.ArrayController.extend({
   ous: function() {
-    console.log("OusController ous() - fetching.");
     return this.get('store').find('ou');
   }.property()
 });
 App.OusIndexController = Ember.Controller.extend({
-  needs: ["ous","optionsets"],
-  // needs: ['application'],
-  // currentUser: Ember.computed.alias('controllers.application.currentUser'),
-  //  addPost: function() {
-  //  console.log('Adding a post for ', this.get('currentUser.name'));
-  // }
+  needs: ["ous","optionsets"]
 });
 App.OusNewController = App.OuEditController;
 // Client PCs
 App.HostsController = Ember.ArrayController.extend({
   hosts: function() {
-    console.log("HostsController hosts() - fetching.");
     return this.get('store').find('host');
   }.property()
 });
@@ -832,6 +743,8 @@ App.OuHostsController = Ember.Controller.extend({
   padNum:3,
   hostname: null,
   domainName: null,
+  selectedHosts: [],
+  selectedHostsCount: 0,
 
   hostsToAdd: function() {
     if (!this.get('addMultiple')) {
@@ -854,6 +767,29 @@ App.OuHostsController = Ember.Controller.extend({
   }.property('hostname','numHosts','domainName','padNum','startNum','addMultiple'),
 
   actions: {
+    updateHostSelection: function() {
+      var selection = [];
+      $("#cfghosts .ui-selected").each( function(i) {
+        selection.push( $(this).attr("hostDbId") );
+      });
+      this.set('selectedHosts', selection);
+      this.set('selectedHostsCount', $(".ui-selected").length);
+    },
+
+    deleteSelectedHosts: function() {
+      var selection = this.get('selectedHosts');
+      var idx;
+      if (confirm("Permanently DELETE selected host(s) and associated logs?")) {
+        for (idx=0; idx<selection.length; idx++) {
+          var host = this.store.getById('host', selection[idx]);
+          host.deleteRecord();
+          host.save();
+        }
+        $("#cfghosts .pc").removeClass("ui-selected");
+        this.set('selectedHostsCount', 0);
+      }
+    },
+
     saveNewHosts: function() {
       var ouid = this.get('model.id');
       //var ou = this.store.find('ou', ouid); // async
@@ -873,8 +809,8 @@ App.OuHostsController = Ember.Controller.extend({
 });
 App.OuMonitorController = Ember.Controller.extend({
   needs: ["hosts","ous","laststates"],
-  commandActions: ["powerdown","powerup","powercycle","reset","shutdown"],
-  shortActions: {powerdown:"D", powerup:"U", powercycle:"C", reset:"R", shutdown:"S"},
+  commandActions: ["powerdown","powerup","powercycle","reset","shutdown","reboot","bootpxe","boothdd"],
+  shortActions: {powerdown:"D", powerup:"U", powercycle:"C", reset:"R", shutdown:"S", reboot:"B", bootpxe:"X", boothdd:"H"},
 
   selectedCmd: null,
   selectedHosts: [], // EMBER.MUTABLEARRAY?
@@ -883,7 +819,26 @@ App.OuMonitorController = Ember.Controller.extend({
 
   laststates: Ember.computed.alias("controllers.laststates"),
 
+  /* called when group-by-powerstate-selection is done. */
+  modifySelection: function(buttonid, pclass) {
+    if ($("#"+buttonid).hasClass("isActive")) {
+      $("#hosts ."+pclass).removeClass("ui-selected");
+      $("#"+buttonid).removeClass("isActive");
+      if (buttonid=="S_pc") {
+        $("#hosts .pc").removeClass("ui-selected");
+        $("#hselect div").removeClass("isActive");
+      }
+    } else {
+      $("#hosts ."+pclass).addClass("ui-selected");
+      $("#"+buttonid).addClass("isActive");
+    }
+    this.send('updateSelectedHosts');
+  },
+
   actions: {
+    selectByState: function(stateClass) {
+      this.modifySelection('S_'+stateClass,stateClass);
+    },
     updateSelectedHosts: function() {
       var selection = [];
       $("#hosts .ui-selected").each( function(i) {
@@ -901,30 +856,45 @@ App.OuMonitorController = Ember.Controller.extend({
       record.set('description', "Interactive");
       record.set('job_type', 1 /*interactive*/);
       record.save().then(function() {
-        humane.log('<i class="glyphicon glyphicon-saved"></i> Submitted',
-          { timeout: 1000 });
-        // de-uglify:
-         $("#hosts .pc").removeClass("ui-selected");
+        humane.log('<i class="fa fa-save"></i> Submitted', { timeout: 1000 });
+        $("#hosts .pc").removeClass("ui-selected");
         var controller = App.__container__.lookup("controller:ouMonitor");
-        controller.send('updateSelectedHosts')
-      }, function(response){
-        var res = jQuery.parseJSON(response.responseText);
-        var msg = (typeof res.exceptionMessage=='undefined') ?
-                   'Check console, please.' : res.exceptionMessage;
-        humane.log('<i class="glyphicon glyphicon-fire"></i> Ooops! Fatal error:'+
-                   '<p>'+msg+'</p>', { timeout: 0, clickToClose: true });
-        }
-      );
+        controller.send('updateSelectedHosts');
+      });
     }
   }
 });
 App.OuStatelogController = Ember.Controller.extend({
-  needs: ["hosts","ous"],
-
+  needs: ["hosts","ous","logdays"],
+  selectedDay: null, // selectedDay should take last element of logdays ...
+  logdata: [],
+  actions: {
+    selectLogday: function(args) {
+      this.set('selectedDay', args.get('dayUnixStart'));
+    }
+  },
+  dayHours: function(){
+    var hours = [];
+    for (var i=0; i<24; i++) {
+      hours.push({hour:i, posX:i*60, textX:i*60+2});
+    }
+    return hours;
+  }.property(),
+  watchDayAndRoom: function(){
+    var controller = this;
+    var url = 'rest-api.php/statelogs/'+this.get('model.id')+'/'+this.get('selectedDay');
+    Ember.$.getJSON(url).then(function(data) {
+      controller.set('logdata', data);
+    });
+  }.observes('selectedDay','model.id')
+});
+App.LogdaysController = Ember.ArrayController.extend({
+  logdays: function() {
+    return this.get('store').find('logday');
+  }.property(),
 });
 App.LaststatesController = Ember.ArrayController.extend({
   laststates: function() {
-    console.log("laststatesController laststates() - fetching.");
     return this.get('store').find('laststate');
   }.property(),
 
@@ -951,9 +921,9 @@ App.LaststatesController = Ember.ArrayController.extend({
   stateOffList: function() {
     var list = [];
     var laststates = this.get('laststates');
-    hosts = laststates.filterBy('state_amt', 5);
+    var hosts = laststates.filterBy('state_amt', 5);
     for (var i=0; i<hosts.get('length'); i++) {
-      list.push(hosts[i]._data.hostname);
+      list.push(hosts[i].get('hostname'));
     }
     return list.join();
   }.property('laststates.@each.state_amt'),
@@ -961,9 +931,9 @@ App.LaststatesController = Ember.ArrayController.extend({
   stateUnreachableList: function() {
     var list = [];
     var laststates = this.get('laststates');
-    hosts = laststates.filterBy('state_http', 0);
+    var hosts = laststates.filterBy('state_http', 0);
     for (var i=0; i<hosts.get('length'); i++) {
-      list.push(hosts[i]._data.hostname);
+      list.push(hosts[i].get('hostname'));
     }
     return list.join();
   }.property('laststates.@each.state_http'),
@@ -971,9 +941,9 @@ App.LaststatesController = Ember.ArrayController.extend({
   stateRDPList: function() {
     var list = [];
     var laststates = this.get('laststates');
-    hosts = laststates.filterBy('open_port', 3389);
+    var hosts = laststates.filterBy('open_port', 3389);
     for (var i=0; i<hosts.get('length'); i++) {
-      list.push(hosts[i]._data.hostname);
+      list.push(hosts[i].get('hostname'));
     }
     return list.join();
   }.property('laststates.@each.open_port'),
@@ -981,9 +951,9 @@ App.LaststatesController = Ember.ArrayController.extend({
   stateSSHList: function() {
     var list = [];
     var laststates = this.get('laststates');
-    hosts = laststates.filterBy('open_port', 22);
+    var hosts = laststates.filterBy('open_port', 22);
     for (var i=0; i<hosts.get('length'); i++) {
-      list.push(hosts[i]._data.hostname);
+      list.push(hosts[i].get('hostname'));
     }
     return list.join();
   }.property('laststates.@each.open_port'),
@@ -997,38 +967,17 @@ App.OptionsetController = Ember.Controller.extend({
   actions: {
     removeOptionset: function () {
       if (confirm("Really delete this optionset?")) {
-        console.log('FINALLY Remove it');
         var device = this.get('model');
         device.deleteRecord();
-        device.save().then(function() {
-          humane.log('<i class="glyphicon glyphicon-saved"></i> Deleted successfully',
-            { timeout: 1500, clickToClose: false });
-          console.log("FIXME - transtionToRoute doesnt work here...");
-          window.location.href = '#/optionsets';
-        }, function(response){
-          var res = jQuery.parseJSON(response.responseText);
-          var msg = (typeof res.exceptionMessage=='undefined') ?
-                    'Check console, please.' : res.exceptionMessage;
-          humane.log('<i class="glyphicon glyphicon-fire"></i> Ooops! Fatal error:'+
-                     '<p>'+msg+'</p>', { timeout: 0, clickToClose: true });
-        }
-      )};
+        device.save().then(function(){
+          App.successMessage('Deleted successfully','trash',this,'optionsets');
+        });
+      }
     },
-
     doneEditingReturn: function() {
-      console.log(this.get('model'));
-      this.get('model').save().then(function() {
-        humane.log('<i class="glyphicon glyphicon-saved"></i> Saved successfully',
-          { timeout: 800 });
-        window.location.href = '#/optionsets';
-      }, function(response){
-        var res = jQuery.parseJSON(response.responseText);
-        var msg = (typeof res.exceptionMessage=='undefined') ?
-                   'Check console, please.' : res.exceptionMessage;
-        humane.log('<i class="glyphicon glyphicon-fire"></i> Ooops! Fatal error:'+
-                   '<p>'+msg+'</p>', { timeout: 0, clickToClose: true });
-        }
-      );
+      this.get('model').save().then(function(){
+        App.successMessage('Saved successfully','save',this,'optionsets');
+      });
     }
   }
 });
@@ -1043,55 +992,71 @@ App.ScheduleController = Ember.Controller.extend({
   needs: ["ous"],
   currentOU: null,
   ouTree: null,
-  commandActions: ["powerdown","powerup","powercycle","reset","shutdown"],
-  shortActions: {powerdown:"D", powerup:"U", powercycle:"C", reset:"R", shutdown:"S"},
+  commandActions: ["powerdown","powerup","powercycle","reset","shutdown","reboot", "bootpxe", "boothdd"],
+  shortActions: {powerdown:"D", powerup:"U", powercycle:"C", reset:"R", shutdown:"S", reboot:"B", bootpxe:"X", boothdd:"H"},
   validCommands: [
     {cmd: "powerdown", cchar: "D"},
     {cmd: "powerup",   cchar: "U"},
     {cmd: "reset",     cchar: "R"},
     {cmd: "cycle",     cchar: "C"},
     {cmd: "shutdown",  cchar: "S"},
+    {cmd: "reboot",    cchar: "B"},
+    {cmd: "bootpxe",   cchar: "X"},
+    {cmd: "boothdd",   cchar: "H"},
   ],
 
   actions: {
     removeSchedule: function () {
       if (confirm("Really delete this job?")) {
-        console.log('FINALLY Remove it');
         var device = this.get('model');
         device.deleteRecord();
-        device.save().then(function() {
-          humane.log('<i class="glyphicon glyphicon-saved"></i> Deleted successfully',
-            { timeout: 1500, clickToClose: false });
-          console.log("FIXME - transtionToRoute doesnt work here...");
-          window.location.href = '#/schedules';
-        }, function(response){
-          var res = jQuery.parseJSON(response.responseText);
-          var msg = (typeof res.exceptionMessage=='undefined') ?
-                    'Check console, please.' : res.exceptionMessage;
-          humane.log('<i class="glyphicon glyphicon-fire"></i> Ooops! Fatal error:'+
-                     '<p>'+msg+'</p>', { timeout: 0, clickToClose: true });
-        }
-      )};
+        device.save().then(function(){
+          App.successMessage('Deleted successfully','trash',this,'schedules');
+        });
+      }
     },
 
     doneEditingReturn: function() {
       this.set('model.job_type', 2 /* scheduled task */ );
-      this.get('model').save().then(function() {
-        humane.log('<i class="glyphicon glyphicon-saved"></i> Saved successfully',
-          { timeout: 1000 });
-        window.location.href = '#/schedules';
-      }, function(response){
-        var res = jQuery.parseJSON(response.responseText);
-        var msg = (typeof res.exceptionMessage=='undefined') ?
-                   'Check console, please.' : res.exceptionMessage;
-        humane.log('<i class="glyphicon glyphicon-fire"></i> Ooops! Fatal error:'+
-                   '<p>'+msg+'</p>', { timeout: 0, clickToClose: true });
-        }
-      );
+
+      // select dropdown will set newCommand when selection is altered
+      if (this.get('newCommand')) {
+        var newCommand = this.get('newCommand');
+        this.set('model.amtc_cmd', newCommand.cchar);
+      }
+
+      this.get('model').save().then(function(){
+        App.successMessage('Saved successfully','save',this,'schedules');
+      });
     }
   }
 });
 App.SchedulesNewController = App.ScheduleController;
+// System Status
+App.SystemhealthController = Ember.Controller.extend({
+  // action killJobs, killProcesses
+  actions: {
+    flushStatelog: function () {
+      if (confirm('Really drop all host state log / history information?')) {
+        Ember.$.getJSON('rest-api.php/flushStatelog').then(function(data) {
+          humane.log('<i class="fa fa-trash"></i> Flush successful',
+            { timeout: 1500, clickToClose: false });
+        });
+      }
+    },
+    resetMonitoringJob: function () {
+      if (confirm('Really reset monitoring job status?')) {
+        Ember.$.getJSON('rest-api.php/resetMonitoringJob').then(function(data) {
+          humane.log('<i class="fa fa-trash"></i> Reset successful',
+            { timeout: 1500, clickToClose: false });
+        });
+      }
+    },
+    refresh: function () {
+      this.send("refreshData"); // ... on the router
+    }
+  }
+});
 // Controller for /#setup (Installer)
 App.SetupController = Ember.Controller.extend({
   // Controller used for initial installation page #setup
@@ -1142,28 +1107,25 @@ App.SetupController = Ember.Controller.extend({
         authurl: this.get('authurl'),
         importDemo: this.get('importDemo'),
         installHtaccess: this.get('installHtaccess'),
-      };
+      }
       $.ajax({type:"POST", url:"rest-api.php/submit-configuration",
               data:jQuery.param(d), dataType:"json"}).then(function(response) {
-        console.log(response);
         if (typeof response.errorMsg != "undefined")
-          humane.log('<i class="glyphicon glyphicon-fire"></i> Save failed: <br>'+response.errorMsg, { timeout: 0, clickToClose: true, addnCls: 'humane-error'});
+          humane.log('<i class="fa fa-meh-o"></i> Save failed: <br>'+response.errorMsg, { timeout: 0, clickToClose: true, addnCls: 'humane-error'});
         else {
-          humane.log('<i class="glyphicon glyphicon-saved"></i> Saved successfully! Warping into amtc-web!', { timeout: 1500 });
+          humane.log('<i class="fa fa-save"></i> Saved successfully! Warping into amtc-web!', { timeout: 1500 });
           window.setTimeout( function(){
             window.location.href = 'index.html';
           }, 2000);
         }
       }, function(response){
-        console.log("what happened?");
-        console.log(response);
         if (response.responseText=='INSTALLTOOL_LOCKED') {
-          humane.log('<i class="glyphicon glyphicon-fire"></i> Setup is LOCKED!<br>'+
+          humane.log('<i class="fa fa-meh-o"></i> Setup is LOCKED!<br>'+
             'Setup is intended for initial installation only.<br>'+
             'Remove <code>config/siteconfig.php</code> to re-enable setup.',
             { timeout: 0, clickToClose: true, addnCls: 'humane-error' });
         } else {
-          humane.log('<i class="glyphicon glyphicon-fire"></i> Failed to save! Please check console.'+response.responseText,
+          humane.log('<i class="fa fa-meh-o"></i> Failed to save! Please check console.'+response.responseText,
             { timeout: 0, clickToClose: true, addnCls: 'humane-error' });
         }
       });
@@ -1179,22 +1141,22 @@ App.Ou = DS.Model.extend({
   description: attr('string'),
   parent_id: DS.belongsTo('ou', {inverse: 'children'}),
   optionset_id: DS.belongsTo('optionset'),
-  ou_path: attr('string'),
   idle_power: attr('number'),
   logging: attr('boolean'),
   children: DS.hasMany('ou', {inverse: 'parent_id'}),
   hosts: DS.hasMany('host'),//, {inverse: null}),
 
-  /// Improve: feels hackish, but makes the dropdown+save work...
-  optionsetid: function(key,value) {
-    if (value) {
-      return value;
+  // return ou/room path-style string of 'parent directories'
+  ou_path: function() {
+    var height = 0;
+    var pathParts = [];
+    var p = this.get('parent_id');
+    while (p && height++<10) {
+      pathParts.unshift(p.get('name'));
+      p = p.get('parent_id');
     }
-    else {
-      console.log('get optionset -> ' + this.get('optionset_id.id'));
-      return this.get('optionset_id');
-    }
-  }.property('optionset_id'),
+    return pathParts.join(' / ');
+  }.property('parent_id').cacheable(),
 
   // new ou-tree; 1:1 from https://github.com/joachimhs/Montric/blob/master/Montric.View/src/main/webapp/js/app/models/MainMenuModel.js
   isSelected: false,
@@ -1209,11 +1171,9 @@ App.Ou = DS.Model.extend({
     return this.get('children').get('length') == 0;
   }.property('children').cacheable(),
   isExpandedObserver: function() {
-    //console.log('isExpanded: ' + this.get('id'));
     if (this.get('isExpanded')) {
       var children = this.get('children.content');
       if (children) {
-        //console.log('Sorting children');
         //children.sort(App.Ou.compareNodes);
       }
     }
@@ -1238,7 +1198,7 @@ App.Host = DS.Model.extend({
 });
 // Markdown help / documentation pages
 App.Page = DS.Model.extend({
-  page_name: attr('string'),
+  file_name: attr('string'),
   page_title: attr('string'),
   page_content: attr('string'),
 });
@@ -1285,6 +1245,7 @@ App.Laststate = DS.Model.extend({
   open_port: attr('number'),
   state_amt: attr('number'),
   state_http: attr('number'),
+  hostname: attr('string'),
 
   lastScan: function() {
     return moment.unix(this.get('state_begin')).fromNow();
@@ -1295,6 +1256,8 @@ App.Laststate = DS.Model.extend({
     this.get('state_http')== 200  && this.get('state_amt')==5 && (cc='fa fa-power-off fa-fw'); // AMT ok, powered down
     this.get('open_port') == 22   && (cc = "fa fa-linux fa-fw");
     this.get('open_port') == 3389 && (cc = "fa fa-windows fa-fw");
+    this.get('state_amt') == 3 && (cc = "fa fa-bed fa-fw"); // sleeping
+    this.get('state_amt') == 4 && (cc = "fa fa-rocket fa-fw"); // hibernating
     return new Ember.Handlebars.SafeString('<i class="'+cc+'"></i> ');
   }.property('open_port','state_http','state_amt'),
   openPortCssClass: function() {
@@ -1314,6 +1277,17 @@ App.Laststate = DS.Model.extend({
   amtStateCssClass: function() {
     return 'S' + this.get('state_amt');
   }.property('state_amt'),
+});
+// Days with logdata available
+App.Logday = DS.Model.extend({
+  // id = date
+  dayString: function() {
+    return moment(this.get('id')).format("YYYY MMMM Do (dddd)");
+  }.property('id'),
+  dayUnixStart: function() {
+    var tstr = this.get('id')+' 00:00:00 +0200';
+    return moment(tstr,"YYYY-MM-DD HH:mm:ss Z").unix();
+  }.property('id'),
 });
 // Jobs / scheduled tasks
 App.Job = DS.Model.extend({
@@ -1400,14 +1374,123 @@ App.TreeMenuNodeComponent = Ember.Component.extend({
       this.toggleProperty('node.isSelected');
     },
     selectNode: function(node) {
-      //console.log('selectedNode: ' + node);
       this.sendAction('action', node);
     }
   },
   isSelected: function() {
-    //console.log("'" + this.get('selectedNode') + "' :: '" + this.get('node.id') + "'");
     return this.get('selectedNode') === this.get('node.id');
   }.property('selectedNode', 'node.id')
+});
+App.StateLogComponent = Ember.Component.extend({
+  logItems: function() {
+    var host = this.get('controller.host');
+    var logs = this.get('controller.logdata');
+    var hostid = host.get('id');
+    var output = [];
+    var day0h = this.get('controller.selectedDay');
+    var now = moment().unix();
+    var today = moment(moment().format("YYYY-MM-DDT00:00:00.000Z")).unix();
+    // SVG ... tbd
+    // SVG width: 1440px = 60minutes*24
+    // http://madhatted.com/2014/11/24/scalable-vector-ember
+    logs.forEach(function(log) {
+      if (hostid==log.host_id && day0h != null) {
+        var dayMinute = (log.state_begin - day0h)/60;
+        log.hostname = host.get('hostname');
+        log.posX = dayMinute > 0 ? dayMinute : 0;
+        log.sizeX = 1440-dayMinute;
+        log.timeBegin = moment.unix(log.state_begin).format("MMM DD HH:mm:ss");
+        // unsuck ...: use css classes as monitor
+        if (log.open_port==22 && log.state_http==200) {
+          log.fillColor = '#63aae7;'; // linux
+        } else if (log.open_port==3389 && log.state_http==200) {
+          log.fillColor = '#5cb85c'; // windows
+        } else if (log.state_amt==5 && log.state_http==200) {
+          log.fillColor = '#aaa'; // off + AMT reachable
+        } else if (log.state_amt==16 || log.state_http!=200) {
+          log.fillColor = '#e9635f'; // AMT unreachable
+        } else if (log.state_amt==3) {
+          log.fillColor = 'orange'; // sleep
+        } else if (log.state_amt==4) {
+          log.fillColor = '#aae'; // hibernate
+        } else if (log.state_amt==0 && log.state_http==200 && log.open_port==0) {
+          log.fillColor = 'yellow'; // reachable, but no OS detected/running
+        } else {
+          log.fillColor = 'black'; // what? f_ix-me
+        }
+        output.push(log);
+      }
+    });
+    // if looking at today's log, indicate current time
+    if (day0h == today) {
+      var nowMinute = Math.round((now-today)/60);
+      var nowentry = {posX: nowMinute, sizeX: 1440-nowMinute, fillColor:'white;fill-opacity:0.5'};
+      output.push(nowentry)
+    }
+    return output;
+  }.property('controller.logdata')
+});
+App.MySelectComponent = Ember.Component.extend({
+  // http://emberjs.com/deprecations/v1.x/#toc_ember-select
+  // possible passed-in values with their defaults:
+  content: [],
+  prompt: null,
+  optionValuePath: 'id',
+  optionLabelPath: null,//'title',
+  comparisonAttr: null,
+
+  action: Ember.K, // action to fire on change
+
+  // shadow the passed-in `selection` to avoid
+  // leaking changes to it via a 2-way binding
+  _selection: Ember.computed.reads('selection'),
+
+  actions: {
+    // change() { ... } syntax breaks nodejs build. fix
+    change: function() {
+      const selectEl = this.$('select')[0];
+      const selectedIndex = selectEl.selectedIndex;
+      const content = this.get('content');
+
+      // decrement index by 1 if we have a prompt
+      const hasPrompt = !!this.get('prompt');
+      const contentIndex = hasPrompt ? selectedIndex - 1 : selectedIndex;
+
+      var ary = content.toArray();
+      const selection = ary[contentIndex];
+
+      // set the local, shadowed selection to avoid leaking
+      // changes to `selection` out via 2-way binding
+      this.set('_selection', selection);
+
+      const changeCallback = this.get('action');
+      changeCallback(selection);
+    }
+  }
+});
+App.IsEqualHelper = Ember.Helper.helper(function(params) {
+  // http://emberjs.com/deprecations/v1.x/#toc_ember-select
+  // ^ uses ES6/Babel function([params]) that will transpile
+  // into better params validation as done here
+  var leftSide = params[0];
+  var rightSide = params[1];
+
+  // kludge to allow <select> comparison for non-ember-data records.
+  // used by scheduleEdit.hbs -- improve/fix...
+  var comparisonAttr = params[2]; // null by component's default
+  if (comparisonAttr) {
+    return leftSide[comparisonAttr] === rightSide;
+  }
+
+  return leftSide === rightSide;
+});
+App.IsNotHelper = Ember.Helper.helper(function(value) {
+  return !value[0];
+});
+App.ReadPathHelper = Ember.Helper.helper(function(params){
+  var object = params[0];
+  var path = params[1];
+  return Ember.get(object, path);
 });
 
 // https://gist.github.com/pwfisher/b4d27d984ad5868baab6
@@ -1431,8 +1514,8 @@ App.RadioButtonComponent = Ember.Component.extend({
 // Handlebars helpers
 
 // markdown to html conversion
-var showdown = new Showdown.converter();
 Ember.Handlebars.helper('format-markdown', function(input) {
+  var showdown = new window.showdown.Converter();
   if (input) {
     var md = showdown.makeHtml(input);
     md = md.replace("<h1 id=",'<h1 class="page-header" id=');
@@ -1453,31 +1536,8 @@ Ember.Handlebars.helper('check-mark', function(input) {
 
 // moment.js PRETTY timestamps
 Ember.Handlebars.helper('format-from-now', function(date) {
+  if (!date) {
+    return 'n/a';
+  }
   return moment.unix(date).fromNow();
 });
-
-
-// Further helpers
-
-
-// Legacy amtc-web1 needs-cleanup-stuff
-
-//// FIXME
-/* called when group-by-powerstate-selection is done. */
-function modifySelection(buttonid, pclass) {
-  if ($("#"+buttonid).hasClass("isActive")) {
-    $("#hosts ."+pclass).removeClass("ui-selected");
-    $("#"+buttonid).removeClass("isActive");
-    if (buttonid=="any") {
-      $("#hosts .pc").removeClass("ui-selected");
-      $("#hselect span").removeClass("isActive");
-    }
-  } else {
-    $("#hosts ."+pclass).addClass("ui-selected");
-    $("#"+buttonid).addClass("isActive");
-  }
-  //updatePowerController();
-  var controller = App.__container__.lookup("controller:ouMonitor");
-  controller.send('updateSelectedHosts')
-}
-/////// FIXME

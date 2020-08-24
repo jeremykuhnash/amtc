@@ -20,6 +20,18 @@
 #include <errno.h>
 #include "amt.h"
 
+#ifdef WITH_GPL_AMTTERM
+// includes for amtterm
+#include <fcntl.h>
+#include <termios.h>
+#include <signal.h>
+#include <sys/ioctl.h>
+#include "amtterm/redir.h"
+// defines for included amtterm
+#define APPNAME "amtc-amtterm"
+#define BUFSIZE 512
+#endif
+
 #define THREAD_ID      pthread_self(  )
 #define CMD_INFO       0
 #define CMD_POWERUP    1
@@ -27,8 +39,12 @@
 #define CMD_POWERRESET 3
 #define CMD_POWERCYCLE 4
 #define CMD_SHUTDOWN   5
-#define CMD_ENUMERATE  6
-#define CMD_MODIFY     7
+#define CMD_REBOOT     6
+#define CMD_ENUMERATE  7
+#define CMD_MODIFY     8
+#define CMD_TERMINAL   9
+#define CMD_PXEBOOT    10
+#define CMD_HDDBOOT    11
 #define MAX_HOSTS      255
 #define PORT_SSH       22
 #define PORT_RDP       3389
@@ -41,19 +57,21 @@
 
 unsigned char *acmds[] = {
   /* SOAP/XML request bodies as included via amt.h, AMT6-8 */
-  cmd_info,cmd_powerup,cmd_powerdown,cmd_powerreset,cmd_powercycle,
+  cmd_info, cmd_powerup, cmd_powerdown, cmd_powerreset, cmd_powercycle,
   /* WS-MAN / DASH / AMT6-9+ versions */
-  wsman_info, wsman_up,wsman_down,wsman_reset,wsman_reset,
+  wsman_info, wsman_up, wsman_down, wsman_reset, wsman_reset,
   /* generic wsman enumerations using -E <classname> */
-  wsman_shutdown_graceful, wsman_xenum,
+  wsman_shutdown_graceful, wsman_reset_graceful, wsman_xenum,
   /* AMT config settings via wsman -- cfgcmd 0..5  */
   wsman_solredir_disable, wsman_solredir_enable,
   wsman_webui_disable, wsman_webui_enable,
-  wsman_ping_disable, wsman_ping_enable
+  wsman_ping_disable, wsman_ping_enable,
+  // HAXX ! ... for boot device selection
+  wsman_pxeboot, wsman_hddboot, wsman_bootconfig
 };
 const char *hcmds[] = {
   "INFO","POWERUP","POWERDOWN","POWERRESET","POWERCYCLE",
-  "SHUTDOWN","ENUMERATE","MODIFY"
+  "SHUTDOWN","REBOOT","ENUMERATE","MODIFY", "AMTTERM", "PXEBOOT", "HDDBOOT"
 };
 const char *powerstate[] = { /* AMT/ACPI */
  "S0 (on)", "S1 (cpu stop)", "S2 (cpu off)", "S3 (sleep)",
@@ -128,14 +146,18 @@ bool  enforceScans = false; // enforce SSH/RDP scan even if no AMT success
 int main(int argc,char **argv,char **envp) {
   int c;
 
-  while ((c = getopt(argc, argv, "IUDRSCLE:M:5gndeqvjsrp:t:w:m:c:")) != -1)
+  while ((c = getopt(argc, argv, "HXFIBUDRSCLTE:M:5gndeqvjsrp:t:w:m:c:")) != -1)
   switch (c) {
     case 'I': cmd = CMD_INFO;                break;
     case 'U': cmd = CMD_POWERUP;             break;
     case 'D': cmd = CMD_POWERDOWN;           break;
     case 'C': cmd = CMD_POWERCYCLE;          break;
     case 'R': cmd = CMD_POWERRESET;          break;
+    case 'X': cmd = CMD_PXEBOOT; useWsmanShift = 9; break;
+    case 'H': cmd = CMD_HDDBOOT; useWsmanShift = 9; break;
     case 'S': cmd = CMD_SHUTDOWN; useWsmanShift=5; break;
+    case 'B': cmd = CMD_REBOOT; useWsmanShift=5; break;
+    case 'T': cmd = CMD_TERMINAL;            break;
     case 'E': cmd = CMD_ENUMERATE; quiet=1; useWsmanShift=5; do_enumerate=get_enum_class(optarg); break;
     case 'M': cmd = CMD_MODIFY; useWsmanShift=5; do_modify=optarg; break;
     case 'L': list_wsman_cmds();             break;
@@ -224,11 +246,20 @@ int main(int argc,char **argv,char **envp) {
       cfgcmd=5;
     } else {
       printf("Bad config command\n");
-      exit(1); 
+      exit(1);
     }
   }
 
   get_amt_pw();
+
+  if (cmd==CMD_TERMINAL) {
+#ifdef WITH_GPL_AMTTERM
+    return amtterm_session();
+#else
+    printf("This version of amtc was compiled without amtterm (GPL) support.\n");
+    exit(ENOTSUP);
+#endif
+  }
 
   sem_init(&mutex, 0, 1);
   curl_global_init(CURL_GLOBAL_ALL);
@@ -308,6 +339,16 @@ static void *process_single_client(void* num) {
   else
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS , acmds[cmd+useWsmanShift+cfgcmd]);
 
+#if LIBCURL_VERSION_MAJOR > 7 || (LIBCURL_VERSION_MAJOR==7 && LIBCURL_VERSION_MINOR >= 29)
+  if (useTLS) {
+    // http://curl.haxx.se/libcurl/c/CURLOPT_SSLVERSION.html
+    // required for RHEL7+ -- will recieve "NSS error -12272 (SSL_ERROR_BAD_MAC_ALERT)" without it.
+    // The page above states CURL_SSLVERSION_TLSv1_0 was introduced with curl 7.34.0.
+    // But it works on RHEL with 7.29. Please report if this is an issue for you.
+    curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_0);
+  }
+#endif
+
   if (noVerifyCert) {
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
@@ -341,6 +382,11 @@ static void *process_single_client(void* num) {
       res = curl_easy_perform(curl);
       curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
     } else { printf("YUKES. fixme wsman-enum\n"); }
+  }
+  // 'save' boot device selection
+  if ((cmd==CMD_PXEBOOT || cmd==CMD_HDDBOOT) && http_code==200) {
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS , wsman_bootconfig);
+    res = curl_easy_perform(curl);
   }
 
   char umsg[100];
@@ -629,3 +675,43 @@ struct addrinfo* lookup_host (const char *host) {
 
   return NULL;
 }
+
+/* ------------------------------------------------------------------ */
+
+// adapted amtterm.c main() ...
+#ifdef WITH_GPL_AMTTERM
+#include "amtc-amtterm.c"
+int amtterm_session()
+{
+  struct host *host = &hostlist[0];
+  struct redir r;
+
+  memset(&r, 0, sizeof(r));
+  r.verbose = 1;
+  memcpy(r.type, "SOL ", 4);
+  strcpy(r.user, "admin");
+
+  r.cb_data  = &r;
+  r.cb_recv  = recv_tty;
+  r.cb_state = state_tty;
+
+  snprintf(r.pass, sizeof(r.pass), "%s", amtpasswdp);
+
+  r.verbose = verbosity == 0 ? 0 : 1;
+  snprintf(r.host, sizeof(r.host), "%s", (char*)host->hostname);
+
+  tty_save();
+
+  if (-1 == redir_connect(&r)) {
+    tty_restore();
+    exit(1);
+  }
+
+  tty_raw();
+  redir_start(&r);
+  redir_loop(&r);
+  tty_restore();
+
+  exit(0);
+}
+#endif

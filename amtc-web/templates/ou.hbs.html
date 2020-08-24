@@ -1,0 +1,25 @@
+{{! Display a single OU }}
+<div class="row">
+  <div class="col-lg-5">
+      <h1 class="page-header">{{model.name}}</h1>
+  </div>
+  <div class="col-lg-7">
+    <ul class="nav nav-pills viewmode">
+      {{#link-to "ou.monitor" tagName="li"}}
+        {{#link-to "ou.monitor"}}Control{{/link-to}}
+      {{/link-to}}
+      {{#link-to "ou.statelog" tagName="li"}}
+        {{#link-to "ou.statelog"}}State Log{{/link-to}}
+      {{/link-to}}
+      <li><a href="#messages-pills" data-toggle="tab">Energy</a></li>
+      {{#link-to "ou.edit" tagName="li"}}
+        {{#link-to "ou.edit"}}Edit OU{{/link-to}}
+      {{/link-to}}
+      {{#link-to "ou.hosts" tagName="li"}}
+        {{#link-to "ou.hosts"}}Edit Hosts{{/link-to}}
+      {{/link-to}}
+    </ul>
+  </div>
+</div>
+{{outlet}}
+<!-- see ou/edit, ou/monitor, ou/hosts -->
